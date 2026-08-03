@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  @apply bg-bg-950 text-slate-100 antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.card {
+  @apply bg-bg-800/80 border border-white/5 rounded-2xl shadow-card backdrop-blur-sm;
+}
+
+.pill {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+}
+
+.gradient-text {
+  @apply bg-accent-gradient bg-clip-text text-transparent;
+}

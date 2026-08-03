@@ -1,0 +1,12 @@
+{
+  "name": "Accidental Running App",
+  "short_name": "AccidentalRun",
+  "description": "Half marathon training tracker",
+  "theme_color": "#0A0F1C",
+  "background_color": "#0A0F1C",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
