@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type {
   Activity,
+  ActivityDetail,
   Insight,
   IntegrationSettings,
+  PersonalRecord,
   Profile,
   RaceEvent,
   StravaConnection,
@@ -43,6 +45,96 @@ export function useProfile(userId?: string) {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', userId!).single()
       if (error) throw error
       return data as Profile
+    }
+  })
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ userId, ...patch }: Partial<Profile> & { userId: string }) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] })
+  })
+}
+
+// ---------- Personal records ----------
+export function usePersonalRecords(userId?: string) {
+  return useQuery({
+    queryKey: ['personal-records', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('personal_records')
+        .select('*')
+        .eq('user_id', userId!)
+        .order('distance_m', { ascending: true })
+      if (error) throw error
+      return data as PersonalRecord[]
+    }
+  })
+}
+
+export function useSavePersonalRecord() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (record: Partial<PersonalRecord> & { user_id: string }) => {
+      // One hand-entered record per distance, so re-saving the same distance
+      // replaces it rather than stacking a second row.
+      const { error } = await supabase
+        .from('personal_records')
+        .upsert(
+          { ...record, source: record.source ?? 'manual', updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,distance_m,source', ignoreDuplicates: false }
+        )
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personal-records'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
+    }
+  })
+}
+
+export function useDeletePersonalRecord() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('personal_records').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personal-records'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
+    }
+  })
+}
+
+/** Marks one record as the basis for derived paces, clearing the flag on the rest. */
+export function useSetPrimaryRecord() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ userId, id }: { userId: string; id: string }) => {
+      const { error: clearErr } = await supabase
+        .from('personal_records')
+        .update({ is_primary: false })
+        .eq('user_id', userId)
+        .neq('id', id)
+      if (clearErr) throw clearErr
+      const { error } = await supabase
+        .from('personal_records')
+        .update({ is_primary: true })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personal-records'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
     }
   })
 }
@@ -281,6 +373,26 @@ export function useActivities(userId?: string) {
   })
 }
 
+/** The Strava detail payload (splits, laps, best efforts) merged into `raw`. */
+export function useActivityDetail(activityId?: string | null) {
+  return useQuery({
+    queryKey: ['activity-detail', activityId],
+    enabled: !!activityId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('activities')
+        .select('raw, fetched_detail_at')
+        .eq('id', activityId!)
+        .single()
+      if (error) throw error
+      return {
+        detail: (data.raw ?? {}) as ActivityDetail,
+        fetchedAt: data.fetched_detail_at as string | null
+      }
+    }
+  })
+}
+
 export function useInsights(userId?: string) {
   return useQuery({
     queryKey: ['insights', userId],
@@ -310,6 +422,26 @@ export function useAnalyzeBlock() {
   return useMutation({
     mutationFn: async (planId: string) => callFunction('analyze-block', { plan_id: planId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['insights'] })
+  })
+}
+
+/**
+ * Rewrites pace and HR-zone targets on every session of the active plan from the
+ * current profile, and flags any AI analyses that were written against the old
+ * targets. Returns `{ updated, staleInsights }`.
+ */
+export function useRecalcPlanPaces() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (planId: string) =>
+      callFunction<{ updated: number; staleInsights: number }>('recalc-plan-paces', {
+        plan_id: planId
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+      qc.invalidateQueries({ queryKey: ['session'] })
+      qc.invalidateQueries({ queryKey: ['insights'] })
+    }
   })
 }
 

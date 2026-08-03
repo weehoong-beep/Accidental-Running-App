@@ -1,3 +1,7 @@
+import type { HrZoneModel } from './physiology'
+
+export type { HrZoneModel }
+
 export type SessionType =
   | 'cross_train'
   | 'easy'
@@ -78,6 +82,43 @@ export interface Profile {
   threshold_pace_sec_per_km: number | null
   vdot: number | null
   weight_kg: number | null
+  height_cm: number | null
+  date_of_birth: string | null
+  sex: Sex | null
+  lthr: number | null
+  hr_zone_model: HrZoneModel | null
+  /**
+   * 'derived' recomputes paces from the primary personal record; 'manual' uses
+   * whatever is stored in the pace columns below. Either way the columns hold
+   * the current values, so the Edge Functions can read them without recomputing.
+   */
+  pace_source: PaceSource | null
+  easy_pace_min_sec: number | null
+  easy_pace_max_sec: number | null
+  marathon_pace_sec: number | null
+  interval_pace_sec: number | null
+  repetition_pace_sec: number | null
+  long_run_day: number | null
+  days_per_week: number | null
+}
+
+export type Sex = 'male' | 'female' | 'unspecified'
+export type PaceSource = 'derived' | 'manual'
+
+export interface PersonalRecord {
+  id: string
+  user_id: string
+  distance_m: number
+  distance_label: string
+  time_sec: number
+  achieved_on: string | null
+  source: 'manual' | 'strava'
+  strava_activity_id: number | null
+  race_name: string | null
+  is_primary: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface StravaConnection {
@@ -111,6 +152,16 @@ export interface Activity {
   total_elevation_gain_m: number | null
   matched_session_id: string | null
   match_status: 'matched' | 'partial' | 'unmatched' | null
+  /** Strava workout_type for runs: 0 default, 1 race, 2 long run, 3 workout. */
+  workout_type: number | null
+  /** True steps per minute — sync doubles Strava's one-leg figure. */
+  average_cadence: number | null
+  average_temp: number | null
+  /** Strava "Relative Effort". Only present when the run recorded heart rate. */
+  suffer_score: number | null
+  gear_id: string | null
+  /** When GET /activities/{id} was merged into `raw`. Null = splits/laps not yet fetched. */
+  fetched_detail_at: string | null
 }
 
 export interface Insight {
@@ -124,4 +175,55 @@ export interface Insight {
   content: string
   model: string | null
   created_at: string
+  /** Set when plan pace targets were recalculated after this analysis was written. */
+  is_stale: boolean | null
+}
+
+// ---------------------------------------------------------------------------
+// Subsets of the Strava detailed-activity payload we read back out of
+// `activities.raw`. Only the fields the splits and laps views use.
+// ---------------------------------------------------------------------------
+
+export interface ActivitySplit {
+  split: number
+  distance: number
+  elapsed_time: number
+  moving_time: number
+  average_speed: number
+  /** Grade-adjusted speed, m/s. Strava computes this for us. */
+  average_grade_adjusted_speed?: number
+  elevation_difference?: number | null
+  average_heartrate?: number | null
+  pace_zone?: number
+}
+
+export interface ActivityLap {
+  id: number
+  name: string | null
+  lap_index: number
+  distance: number
+  elapsed_time: number
+  moving_time: number
+  average_speed: number
+  max_speed?: number
+  average_cadence?: number | null
+  average_heartrate?: number | null
+  max_heartrate?: number | null
+  total_elevation_gain?: number | null
+}
+
+export interface BestEffort {
+  name: string
+  distance: number
+  elapsed_time: number
+  moving_time: number
+  start_date_local?: string | null
+  pr_rank?: number | null
+}
+
+/** The shape of `activities.raw` once the detail fetch has merged into it. */
+export interface ActivityDetail {
+  splits_metric?: ActivitySplit[]
+  laps?: ActivityLap[]
+  best_efforts?: BestEffort[]
 }

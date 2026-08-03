@@ -1,4 +1,5 @@
 import { Route, Routes, useLocation } from 'react-router-dom'
+import type { Location } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/context/AuthContext'
 import { BottomNav } from '@/components/layout/BottomNav'
@@ -9,6 +10,7 @@ import { Weekly } from '@/screens/Weekly'
 import { SessionDetail } from '@/screens/SessionDetail'
 import { Training } from '@/screens/Training'
 import { Settings } from '@/screens/Settings'
+import { Profile } from '@/screens/Profile'
 import { Onboarding } from '@/screens/Onboarding'
 import { useActivePlan } from '@/lib/queries'
 
@@ -28,12 +30,10 @@ export default function App() {
     return <Auth />
   }
 
-  return (
-    <AuthedApp userId={user.id} locationKey={location.pathname} />
-  )
+  return <AuthedApp userId={user.id} location={location} />
 }
 
-function AuthedApp({ userId, locationKey }: { userId: string; locationKey: string }) {
+function AuthedApp({ userId, location }: { userId: string; location: Location }) {
   const { data: plan, isLoading } = useActivePlan(userId)
 
   if (isLoading) {
@@ -50,14 +50,17 @@ function AuthedApp({ userId, locationKey }: { userId: string; locationKey: strin
 
   return (
     <div className="min-h-screen bg-bg-950 pb-24">
+      {/* Both the explicit location and the key are required for AnimatePresence
+          to see a route change and run the exit animation. */}
       <AnimatePresence mode="wait">
-        <Routes location={locationKey ? undefined : undefined}>
+        <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Dashboard plan={plan} />} />
           <Route path="/weekly" element={<Weekly plan={plan} />} />
           <Route path="/calendar" element={<Calendar plan={plan} />} />
           <Route path="/session/:id" element={<SessionDetail />} />
           <Route path="/training" element={<Training plan={plan} />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/profile" element={<Profile />} />
         </Routes>
       </AnimatePresence>
       <BottomNav />

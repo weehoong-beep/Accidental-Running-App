@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
-import type { TrainingPlan } from '@/lib/types'
+import type { Activity, TrainingPlan, TrainingSession } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
-import { useActivities, useAnalyzeBlock, useAnalyzeRun, useInsights, useStravaConnection, useStravaSync } from '@/lib/queries'
+import {
+  useActivities,
+  useAnalyzeBlock,
+  useAnalyzeRun,
+  useInsights,
+  useProfile,
+  useSessions,
+  useStravaConnection,
+  useStravaSync
+} from '@/lib/queries'
 import { durationToString, metersToKm, paceToString } from '@/lib/format'
+import { BarChart, type BarGroup } from '@/components/charts/BarChart'
+import { LineChart, type LinePoint } from '@/components/charts/LineChart'
 import { PageTransition } from '@/components/layout/PageTransition'
 
 export function Training({ plan }: { plan: TrainingPlan }) {
@@ -44,6 +55,8 @@ export function Training({ plan }: { plan: TrainingPlan }) {
             {stravaSync.isPending ? 'Syncing…' : 'Sync'}
           </button>
         </div>
+
+        <Trends plan={plan} activities={activities} />
 
         {/* Block-level analysis */}
         <div className="card mt-4 p-4">
@@ -112,6 +125,102 @@ export function Training({ plan }: { plan: TrainingPlan }) {
         </div>
       </div>
     </PageTransition>
+  )
+}
+
+/**
+ * Weekly volume against plan, and how easy-run pace is drifting relative to the
+ * runner's own easy range.
+ */
+function Trends({ plan, activities }: { plan: TrainingPlan; activities: Activity[] }) {
+  const { user } = useAuth()
+  const { data: sessions = [] } = useSessions(plan.id)
+  const { data: profile } = useProfile(user?.id)
+
+  const weeks = useMemo<BarGroup[]>(() => {
+    const byWeek = new Map<number, { planned: number; actual: number }>()
+    for (const s of sessions as TrainingSession[]) {
+      if (s.session_type === 'rest') continue
+      const entry = byWeek.get(s.week_index) ?? { planned: 0, actual: 0 }
+      entry.planned += (s.planned_distance_m ?? 0) / 1000
+      if (s.status === 'completed') entry.actual += (s.actual_distance_m ?? s.planned_distance_m ?? 0) / 1000
+      byWeek.set(s.week_index, entry)
+    }
+    return [...byWeek.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([week, v]) => ({ label: `W${week}`, planned: v.planned, actual: v.actual }))
+  }, [sessions])
+
+  // Only runs matched to an easy or long session belong on an easy-pace trend;
+  // tempo and interval days would swamp the signal.
+  const easySessionIds = useMemo(
+    () =>
+      new Set(
+        (sessions as TrainingSession[])
+          .filter((s) => s.session_type === 'easy' || s.session_type === 'long')
+          .map((s) => s.id)
+      ),
+    [sessions]
+  )
+
+  const easyPacePoints = useMemo<LinePoint[]>(
+    () =>
+      activities
+        .filter(
+          (a) =>
+            a.average_pace_sec_per_km != null &&
+            a.local_date != null &&
+            a.matched_session_id != null &&
+            easySessionIds.has(a.matched_session_id)
+        )
+        .map((a) => ({
+          x: new Date(a.local_date + 'T00:00:00').getTime(),
+          y: a.average_pace_sec_per_km as number
+        })),
+    [activities, easySessionIds]
+  )
+
+  const easyBand =
+    profile?.easy_pace_min_sec && profile?.easy_pace_max_sec
+      ? { from: profile.easy_pace_min_sec, to: profile.easy_pace_max_sec }
+      : null
+
+  const totalActual = weeks.reduce((sum, w) => sum + w.actual, 0)
+
+  return (
+    <div className="card mt-4 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trends</p>
+
+      {weeks.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">No sessions in this plan yet.</p>
+      ) : (
+        <>
+          <p className="mt-2 mb-2 text-xs text-slate-400">
+            Weekly volume · {totalActual.toFixed(1)} km logged so far
+          </p>
+          <BarChart data={weeks} unit=" km" />
+        </>
+      )}
+
+      <div className="mt-5 border-t border-white/5 pt-4">
+        <p className="mb-2 text-xs text-slate-400">
+          Easy-run pace
+          {easyBand ? ' — shaded band is your easy range' : ' — set your paces to see your target band'}
+        </p>
+        {easyPacePoints.length < 2 ? (
+          <p className="text-sm text-slate-500">
+            Needs at least two easy or long runs matched to your plan.
+          </p>
+        ) : (
+          <LineChart
+            points={easyPacePoints}
+            band={easyBand}
+            invertY
+            formatY={(v) => paceToString(Math.round(v))}
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
