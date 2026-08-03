@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import {
   callFunction,
@@ -11,6 +11,8 @@ import {
   useStravaDisconnect,
   useStravaSync
 } from '@/lib/queries'
+import { paceRangeToString } from '@/lib/format'
+import { Section } from '@/components/SettingsSection'
 import { PageTransition } from '@/components/layout/PageTransition'
 
 const STRAVA_SCOPE = 'read,activity:read_all'
@@ -102,14 +104,29 @@ export function Settings() {
         <h1 className="text-xl font-extrabold">Settings</h1>
 
         {/* Profile */}
-        <Section title="Profile">
-          <Row label="Name" value={profile?.full_name ?? user?.email ?? '—'} />
-          <Row label="VDOT" value={profile?.vdot != null ? String(profile.vdot) : '—'} />
-          <Row
-            label="Threshold pace"
-            value={profile?.threshold_pace_sec_per_km ? `${Math.floor(profile.threshold_pace_sec_per_km / 60)}:${(profile.threshold_pace_sec_per_km % 60).toString().padStart(2, '0')}/km` : '—'}
-          />
-        </Section>
+        <Link to="/profile" className="mt-4 block">
+          <div className="card flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm font-semibold">
+                {profile?.full_name ?? user?.email ?? 'Runner profile'}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {profile?.vdot != null
+                  ? `VDOT ${profile.vdot} · easy ${paceRangeToString(profile.easy_pace_min_sec, profile.easy_pace_max_sec)}`
+                  : 'Add your records, paces and heart rate'}
+              </p>
+            </div>
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5 shrink-0 text-slate-500"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </Link>
 
         {/* Strava */}
         <Section title="Strava connection">
@@ -170,6 +187,29 @@ export function Settings() {
                   Disconnect
                 </button>
               </div>
+              {stravaSync.data && (
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                  Synced {stravaSync.data.synced} activities, matched {stravaSync.data.matched} to
+                  your plan
+                  {stravaSync.data.recordsUpdated > 0 &&
+                    `, updated ${stravaSync.data.recordsUpdated} personal ${
+                      stravaSync.data.recordsUpdated === 1 ? 'record' : 'records'
+                    }`}
+                  .
+                  {stravaSync.data.detailRemaining > 0 && (
+                    <>
+                      {' '}
+                      {stravaSync.data.detailRemaining} more runs still need their splits — sync
+                      again to continue (Strava limits how many we can pull at once).
+                    </>
+                  )}
+                </p>
+              )}
+              {stravaSync.isError && (
+                <p className="mt-2 text-[11px] text-rose-400">
+                  {(stravaSync.error as Error)?.message ?? 'Sync failed'}
+                </p>
+              )}
             </div>
           ) : (
             <motion.button
@@ -218,20 +258,3 @@ export function Settings() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="card mt-4 p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      {children}
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-1 text-sm">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
-  )
-}

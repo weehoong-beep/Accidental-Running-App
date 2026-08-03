@@ -18,6 +18,14 @@ function paceStr(secPerKm: number | null) {
   return `${m}:${s.toString().padStart(2, "0")}/km`
 }
 
+function age(dateOfBirth: string | null): number | null {
+  if (!dateOfBirth) return null
+  const dob = new Date(dateOfBirth + "T00:00:00Z")
+  if (Number.isNaN(dob.getTime())) return null
+  const years = (Date.now() - dob.getTime()) / (365.2425 * 24 * 60 * 60 * 1000)
+  return years > 0 && years < 120 ? Math.floor(years) : null
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS })
 
@@ -64,6 +72,25 @@ Deno.serve(async (req: Request) => {
       session = data
     }
 
+    // The runner's own paces and heart-rate references, so the coaching is
+    // judged against their actual thresholds rather than generic assumptions.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle()
+
+    const profileBlock = profile
+      ? `About this athlete:
+- VDOT: ${profile.vdot ?? "unknown"}
+- Easy pace range: ${paceStr(profile.easy_pace_min_sec)}–${paceStr(profile.easy_pace_max_sec)}
+- Marathon pace: ${paceStr(profile.marathon_pace_sec)}
+- Threshold pace: ${paceStr(profile.threshold_pace_sec_per_km)}
+- Interval pace: ${paceStr(profile.interval_pace_sec)}
+- Resting HR: ${profile.resting_hr ?? "unknown"} bpm; Max HR: ${profile.max_hr ?? "unknown"} bpm; Threshold HR: ${profile.lthr ?? "unknown"} bpm
+- Age: ${age(profile.date_of_birth) ?? "unknown"}; Weight: ${profile.weight_kg ?? "unknown"} kg`
+      : "No athlete profile details are on record."
+
     const prompt = `You are an experienced running coach analyzing one training run for an athlete following Hal Higdon's Half Marathon Training — Intermediate 2 program.
 
 Actual run (from Strava):
@@ -74,6 +101,11 @@ Actual run (from Strava):
 - Average HR: ${activity.average_heartrate ?? "n/a"} bpm
 - Max HR: ${activity.max_heartrate ?? "n/a"} bpm
 - Elevation gain: ${activity.total_elevation_gain_m ?? 0} m
+- Cadence: ${activity.average_cadence ? Math.round(activity.average_cadence) + " spm" : "n/a"}
+- Temperature: ${activity.average_temp != null ? activity.average_temp + "°C" : "n/a"}
+- Strava Relative Effort: ${activity.suffer_score ?? "n/a"}
+
+${profileBlock}
 
 ${
   session
@@ -85,7 +117,7 @@ ${
     : "No matching planned session was found for this date."
 }
 
-Write a short (3-5 sentence), encouraging but honest analysis: did the run match the intent of the planned session (pace, effort, distance)? Call out anything notable (too fast on an easy day, fell short on distance, strong tempo execution, etc.) and give one concrete, actionable tip for the next similar session. Speak directly to the athlete ("you"). No headers or bullet lists, just a short paragraph.`
+Write a short (3-5 sentence), encouraging but honest analysis: did the run match the intent of the planned session (pace, effort, distance)? Judge pace and effort against this athlete's own paces and heart-rate figures above, not general rules of thumb — for example, only call an easy run "too fast" if it beat the fast end of their easy range. Call out anything notable (fell short on distance, strong tempo execution, heart rate higher than the pace suggests, heat likely a factor) and give one concrete, actionable tip for the next similar session. Speak directly to the athlete ("you"). No headers or bullet lists, just a short paragraph.`
 
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -123,7 +155,9 @@ Write a short (3-5 sentence), encouraging but honest analysis: did the run match
         session_id: activity.matched_session_id,
         insight_date: activity.local_date,
         content,
-        model: MODEL
+        model: MODEL,
+        // Freshly generated against the current targets.
+        is_stale: false
       })
       .select()
       .single()

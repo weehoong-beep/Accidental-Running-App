@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
-import { useSession, useActivities, useInsights } from '@/lib/queries'
+import { useActivities, useActivityDetail, useInsights, useSession } from '@/lib/queries'
+import type { ActivityLap, TrainingSession } from '@/lib/types'
 import { sessionTypeInfo } from '@/lib/higdon'
 import { durationToString, metersToKm, paceRangeToString, paceToString } from '@/lib/format'
 import { SessionTypeIcon } from '@/components/SessionTypeIcon'
@@ -130,6 +131,8 @@ export function SessionDetail() {
           </div>
         )}
 
+        {matchedActivity && <SplitsAndLaps session={session} activityId={matchedActivity.id} />}
+
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={() => setSheetOpen(true)}
@@ -141,6 +144,173 @@ export function SessionDetail() {
 
       {sheetOpen && <SessionActionsSheet session={session} onClose={() => setSheetOpen(false)} />}
     </PageTransition>
+  )
+}
+
+/** Session types where the rep-by-rep lap breakdown is the more useful view. */
+const LAP_FIRST_TYPES = new Set(['interval', 'tempo', 'race_pace'])
+
+/**
+ * Per-kilometre splits and lap breakdown from the Strava detail payload, which
+ * `strava-sync` merges into `activities.raw`.
+ */
+function SplitsAndLaps({
+  session,
+  activityId
+}: {
+  session: TrainingSession
+  activityId: string
+}) {
+  const { data } = useActivityDetail(activityId)
+  const [open, setOpen] = useState(false)
+
+  const splits = data?.detail.splits_metric ?? []
+  // Strava emits one lap covering the whole run when there is no structure to
+  // show, which duplicates the summary already above.
+  const allLaps = data?.detail.laps ?? []
+  const laps = allLaps.length > 1 ? allLaps : []
+
+  if (splits.length === 0 && laps.length === 0) {
+    // Detail either has not been fetched yet or the run predates it.
+    if (data && !data.fetchedAt) {
+      return (
+        <div className="card mt-4 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Splits</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Not pulled yet — hit Sync in Settings to fetch this run's splits from Strava.
+          </p>
+        </div>
+      )
+    }
+    return null
+  }
+
+  const showLapsFirst = LAP_FIRST_TYPES.has(session.session_type) && laps.length > 0
+  const targetMin = session.target_pace_min_sec
+  const targetMax = session.target_pace_max_sec ?? targetMin
+
+  const paces = splits
+    .map((s) => (s.average_speed > 0 ? 1000 / s.average_speed : 0))
+    .filter((p) => p > 0)
+  const slowest = paces.length ? Math.max(...paces) : 0
+
+  return (
+    <div className="card mt-4 p-4">
+      <button className="flex w-full items-center justify-between" onClick={() => setOpen(!open)}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {showLapsFirst ? 'Laps & splits' : 'Splits'}
+        </p>
+        <svg
+          viewBox="0 0 24 24"
+          className={`h-4 w-4 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-4">
+          {showLapsFirst && <LapTable laps={laps} />}
+
+          {splits.length > 0 && (
+            <div>
+              {showLapsFirst && (
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Per kilometre
+                </p>
+              )}
+              <div className="space-y-1">
+                {splits.map((split) => {
+                  const pace = split.average_speed > 0 ? 1000 / split.average_speed : 0
+                  const gap =
+                    split.average_grade_adjusted_speed && split.average_grade_adjusted_speed > 0
+                      ? 1000 / split.average_grade_adjusted_speed
+                      : null
+                  // Faster splits get a longer bar.
+                  const width = slowest > 0 && pace > 0 ? (slowest / pace) * 100 : 0
+                  const onTarget =
+                    targetMin != null && targetMax != null
+                      ? pace <= targetMax + 10 && pace >= targetMin - 20
+                      : null
+                  const partial = split.distance < 900
+
+                  return (
+                    <div key={split.split} className="flex items-center gap-2 text-xs">
+                      <span className="w-5 shrink-0 text-slate-500">{split.split}</span>
+                      <div className="relative h-5 flex-1 overflow-hidden rounded bg-white/5">
+                        <div
+                          className={`h-full rounded ${
+                            onTarget === null
+                              ? 'bg-white/15'
+                              : onTarget
+                                ? 'bg-emerald-500/30'
+                                : 'bg-amber-500/30'
+                          }`}
+                          style={{ width: `${Math.min(100, width)}%` }}
+                        />
+                        <span className="absolute inset-y-0 left-2 flex items-center font-medium">
+                          {paceToString(Math.round(pace))}
+                          {partial && (
+                            <span className="ml-1 text-slate-500">
+                              ({metersToKm(split.distance, 2)} km)
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <span className="w-24 shrink-0 text-right text-slate-400">
+                        {gap && Math.abs(gap - pace) > 3 ? `GAP ${paceToString(Math.round(gap))}` : ''}
+                        {split.average_heartrate
+                          ? ` ${Math.round(split.average_heartrate)}bpm`
+                          : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              {targetMin != null && (
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Green splits landed in your target range of{' '}
+                  {paceRangeToString(targetMin, targetMax)}.
+                </p>
+              )}
+            </div>
+          )}
+
+          {!showLapsFirst && laps.length > 0 && <LapTable laps={laps} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LapTable({ laps }: { laps: ActivityLap[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        Laps
+      </p>
+      <div className="space-y-1">
+        {laps.map((lap) => {
+          const pace = lap.average_speed > 0 ? 1000 / lap.average_speed : 0
+          return (
+            <div
+              key={lap.id}
+              className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2 text-xs"
+            >
+              <span className="text-slate-300">{lap.name || `Lap ${lap.lap_index}`}</span>
+              <span className="text-slate-400">
+                {metersToKm(lap.distance, 2)} km · {durationToString(lap.moving_time)} ·{' '}
+                {paceToString(Math.round(pace))}
+                {lap.average_heartrate ? ` · ${Math.round(lap.average_heartrate)} bpm` : ''}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
