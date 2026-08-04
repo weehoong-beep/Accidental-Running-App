@@ -8,10 +8,13 @@ import { sessionTypeInfo } from '@/lib/higdon'
 import { durationToString, metersToKm, paceRangeToString, paceToString } from '@/lib/format'
 import { SessionTypeIcon } from '@/components/SessionTypeIcon'
 import { RouteIcon } from '@/components/RouteIcon'
+import { RouteMap } from '@/components/RouteMap'
 import { PageTransition } from '@/components/layout/PageTransition'
 import { SessionActionsSheet } from '@/components/SessionActionsSheet'
 import { useAuth } from '@/context/AuthContext'
 import { getSummaryPolyline } from '@/lib/polyline'
+
+type ActionTab = 'reschedule' | 'swap' | 'complete'
 
 const STATUS_STYLE: Record<string, string> = {
   completed: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20',
@@ -27,7 +30,7 @@ export function SessionDetail() {
   const { data: session, isLoading } = useSession(id)
   const { data: activities = [] } = useActivities(user?.id)
   const { data: insights = [] } = useInsights(user?.id)
-  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetTab, setSheetTab] = useState<ActionTab | null>(null)
 
   if (isLoading || !session) {
     return (
@@ -66,6 +69,13 @@ export function SessionDetail() {
           </div>
           <span className={`pill mt-3 border ${STATUS_STYLE[session.status]}`}>{session.status}</span>
         </motion.div>
+
+        {/* Route map */}
+        {matchedActivity && getSummaryPolyline(matchedActivity) && (
+          <div className="card mt-4 overflow-hidden">
+            <RouteMap polyline={getSummaryPolyline(matchedActivity)} />
+          </div>
+        )}
 
         {/* Stats */}
         {session.session_type !== 'rest' && (
@@ -135,25 +145,36 @@ export function SessionDetail() {
           </div>
         )}
 
-        {session.status === 'completed' && session.actual_distance_m != null && (
-          <div className="card mt-4 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Actual</p>
-            <p className="mt-1 text-sm">{metersToKm(session.actual_distance_m)} km completed</p>
-          </div>
-        )}
-
         {matchedActivity && <SplitsAndLaps session={session} activityId={matchedActivity.id} />}
 
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setSheetOpen(true)}
-          className="mt-5 mb-8 w-full rounded-xl bg-white/8 py-3 text-sm font-semibold"
-        >
-          Reschedule, swap, or mark complete
-        </motion.button>
+        <div className="mt-5 mb-8 grid grid-cols-3 gap-2">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setSheetTab('reschedule')}
+            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
+          >
+            Reschedule
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setSheetTab('swap')}
+            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
+          >
+            Swap
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setSheetTab('complete')}
+            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
+          >
+            Mark complete
+          </motion.button>
+        </div>
       </div>
 
-      {sheetOpen && <SessionActionsSheet session={session} onClose={() => setSheetOpen(false)} />}
+      {sheetTab && (
+        <SessionActionsSheet session={session} initialTab={sheetTab} onClose={() => setSheetTab(null)} />
+      )}
     </PageTransition>
   )
 }

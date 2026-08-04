@@ -9,12 +9,14 @@ type Tab = 'reschedule' | 'swap' | 'complete'
 
 export function SessionActionsSheet({
   session,
+  initialTab = 'reschedule',
   onClose
 }: {
   session: TrainingSession
+  initialTab?: Tab
   onClose: () => void
 }) {
-  const [tab, setTab] = useState<Tab>('reschedule')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const reschedule = useRescheduleSession()
   const swap = useSwapSessions()
   const markStatus = useMarkSessionStatus()
