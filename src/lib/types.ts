@@ -162,6 +162,8 @@ export interface Activity {
   gear_id: string | null
   /** When GET /activities/{id} was merged into `raw`. Null = splits/laps not yet fetched. */
   fetched_detail_at: string | null
+  /** Strava's raw activity payload, e.g. `raw.map.summary_polyline` for the route shape. */
+  raw?: { map?: { summary_polyline?: string | null } } & Record<string, any>
 }
 
 export interface Insight {

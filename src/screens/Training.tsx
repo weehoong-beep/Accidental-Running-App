@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { format } from 'date-fns'
-import type { Activity, TrainingPlan, TrainingSession } from '@/lib/types'
+import type { Activity, TrainingPlan } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
 import {
   useActivities,
@@ -14,9 +14,14 @@ import {
   useStravaSync
 } from '@/lib/queries'
 import { durationToString, metersToKm, paceToString } from '@/lib/format'
-import { BarChart, type BarGroup } from '@/components/charts/BarChart'
-import { LineChart, type LinePoint } from '@/components/charts/LineChart'
+import { BarChart } from '@/components/charts/BarChart'
+import { LineChart } from '@/components/charts/LineChart'
 import { PageTransition } from '@/components/layout/PageTransition'
+import { RouteIcon } from '@/components/RouteIcon'
+import { computeEasyPacePoints, computeWeeklyVolume } from '@/lib/stats'
+import { getSummaryPolyline } from '@/lib/polyline'
+
+const RUNS_LIST_LIMIT = 10
 
 export function Training({ plan }: { plan: TrainingPlan }) {
   const { user } = useAuth()
@@ -46,7 +51,10 @@ export function Training({ plan }: { plan: TrainingPlan }) {
     <PageTransition>
       <div className="px-5 pt-6 safe-top">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-extrabold">Your Runs</h1>
+          <div>
+            <h1 className="text-xl font-extrabold">Your Runs</h1>
+            <p className="mt-0.5 text-xs text-slate-400">Last {RUNS_LIST_LIMIT} synced runs</p>
+          </div>
           <button
             onClick={() => stravaSync.mutate()}
             disabled={stravaSync.isPending}
@@ -83,25 +91,35 @@ export function Training({ plan }: { plan: TrainingPlan }) {
           {!isLoading && activities.length === 0 && (
             <div className="card p-4 text-center text-sm text-slate-500">No runs synced yet. Tap Sync to pull from Strava.</div>
           )}
-          {activities.map((a) => {
+          {activities.slice(0, RUNS_LIST_LIMIT).map((a) => {
             const runInsight = insights.find((i) => i.kind === 'run' && i.activity_id === a.id)
             const isOpen = expanded === a.id
+            const polyline = getSummaryPolyline(a)
             return (
               <motion.div key={a.id} layout className="card p-4">
                 <button className="w-full text-left" onClick={() => setExpanded(isOpen ? null : a.id)}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-slate-400">
-                        {a.local_date && format(new Date(a.local_date + 'T00:00:00'), 'EEE, MMM d')}
+                  <div className="flex items-center gap-3">
+                    {polyline && (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5">
+                        <RouteIcon polyline={polyline} className="h-7 w-7" strokeColor="#2DD4BF" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-slate-400">
+                            {a.local_date && format(new Date(a.local_date + 'T00:00:00'), 'EEE, MMM d')}
+                          </p>
+                          <p className="font-semibold">{a.name}</p>
+                        </div>
+                        <MatchBadge status={a.match_status} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {metersToKm(a.distance_m)} km · {durationToString(a.moving_time_sec)} · {paceToString(a.average_pace_sec_per_km)}
+                        {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm` : ''}
                       </p>
-                      <p className="font-semibold">{a.name}</p>
                     </div>
-                    <MatchBadge status={a.match_status} />
                   </div>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {metersToKm(a.distance_m)} km · {durationToString(a.moving_time_sec)} · {paceToString(a.average_pace_sec_per_km)}
-                    {a.average_heartrate ? ` · ${Math.round(a.average_heartrate)} bpm` : ''}
-                  </p>
                 </button>
 
                 {isOpen && (
@@ -137,48 +155,8 @@ function Trends({ plan, activities }: { plan: TrainingPlan; activities: Activity
   const { data: sessions = [] } = useSessions(plan.id)
   const { data: profile } = useProfile(user?.id)
 
-  const weeks = useMemo<BarGroup[]>(() => {
-    const byWeek = new Map<number, { planned: number; actual: number }>()
-    for (const s of sessions as TrainingSession[]) {
-      if (s.session_type === 'rest') continue
-      const entry = byWeek.get(s.week_index) ?? { planned: 0, actual: 0 }
-      entry.planned += (s.planned_distance_m ?? 0) / 1000
-      if (s.status === 'completed') entry.actual += (s.actual_distance_m ?? s.planned_distance_m ?? 0) / 1000
-      byWeek.set(s.week_index, entry)
-    }
-    return [...byWeek.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([week, v]) => ({ label: `W${week}`, planned: v.planned, actual: v.actual }))
-  }, [sessions])
-
-  // Only runs matched to an easy or long session belong on an easy-pace trend;
-  // tempo and interval days would swamp the signal.
-  const easySessionIds = useMemo(
-    () =>
-      new Set(
-        (sessions as TrainingSession[])
-          .filter((s) => s.session_type === 'easy' || s.session_type === 'long')
-          .map((s) => s.id)
-      ),
-    [sessions]
-  )
-
-  const easyPacePoints = useMemo<LinePoint[]>(
-    () =>
-      activities
-        .filter(
-          (a) =>
-            a.average_pace_sec_per_km != null &&
-            a.local_date != null &&
-            a.matched_session_id != null &&
-            easySessionIds.has(a.matched_session_id)
-        )
-        .map((a) => ({
-          x: new Date(a.local_date + 'T00:00:00').getTime(),
-          y: a.average_pace_sec_per_km as number
-        })),
-    [activities, easySessionIds]
-  )
+  const weeks = useMemo(() => computeWeeklyVolume(sessions), [sessions])
+  const easyPacePoints = useMemo(() => computeEasyPacePoints(activities, sessions), [activities, sessions])
 
   const easyBand =
     profile?.easy_pace_min_sec && profile?.easy_pace_max_sec

@@ -1,3 +1,5 @@
+import { todayMY } from './timezone'
+
 export function paceToString(secPerKm: number | null | undefined): string {
   if (!secPerKm) return '—'
   const min = Math.floor(secPerKm / 60)
@@ -58,11 +60,9 @@ export function formatWeekday(dateStr: string): string {
 }
 
 export function isToday(dateStr: string): boolean {
-  const today = new Date().toISOString().slice(0, 10)
-  return dateStr === today
+  return dateStr === todayMY()
 }
 
 export function isPast(dateStr: string): boolean {
-  const today = new Date().toISOString().slice(0, 10)
-  return dateStr < today
+  return dateStr < todayMY()
 }

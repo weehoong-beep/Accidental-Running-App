@@ -1,33 +1,25 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { format } from 'date-fns'
-import type { TrainingPlan, TrainingSession } from '@/lib/types'
-import { useSessions } from '@/lib/queries'
+import type { TrainingPlan } from '@/lib/types'
+import { useAuth } from '@/context/AuthContext'
+import { useActivities, useSessions } from '@/lib/queries'
 import { sessionTypeInfo } from '@/lib/higdon'
 import { SessionCard } from '@/components/SessionCard'
 import { PageTransition } from '@/components/layout/PageTransition'
+import { groupSessionsByWeek } from '@/lib/stats'
+import { buildPolylineMap } from '@/lib/polyline'
+import { todayMY } from '@/lib/timezone'
 
 export function Weekly({ plan }: { plan: TrainingPlan }) {
+  const { user } = useAuth()
   const { data: sessions = [] } = useSessions(plan.id)
+  const { data: activities = [] } = useActivities(user?.id)
   const [openWeeks, setOpenWeeks] = useState<Set<number>>(new Set())
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = todayMY()
 
-  const weeks = useMemo(() => {
-    const map = new Map<number, TrainingSession[]>()
-    sessions.forEach((s) => {
-      if (!map.has(s.week_index)) map.set(s.week_index, [])
-      map.get(s.week_index)!.push(s)
-    })
-    return Array.from(map.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([week, list]) => ({
-        week,
-        sessions: list.sort((a, b) => a.session_date.localeCompare(b.session_date)),
-        km: list.reduce((sum, s) => sum + (s.planned_distance_m ?? 0), 0) / 1000,
-        completed: list.filter((s) => s.status === 'completed').length,
-        runnable: list.filter((s) => s.session_type !== 'rest').length
-      }))
-  }, [sessions])
+  const weeks = useMemo(() => groupSessionsByWeek(sessions), [sessions])
+  const polylineMap = useMemo(() => buildPolylineMap(activities), [activities])
 
   const toggleWeek = (week: number) => {
     setOpenWeeks((prev) => {
@@ -48,8 +40,8 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
 
         <div className="mt-5 space-y-3">
           {weeks.map((w) => {
-            const startDate = w.sessions[0]?.session_date
-            const endDate = w.sessions[w.sessions.length - 1]?.session_date
+            const startDate = w.startDate
+            const endDate = w.endDate
             const isCompleted = w.runnable > 0 && w.completed === w.runnable
             const isPast = !!endDate && endDate < todayStr
             const isOver = isCompleted || isPast
@@ -121,6 +113,7 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
                             key={s.id}
                             session={s}
                             dateLabel={format(new Date(s.session_date + 'T00:00:00'), 'EEE, MMM d')}
+                            routePolyline={polylineMap.get(s.id)}
                           />
                         ))}
                       </div>

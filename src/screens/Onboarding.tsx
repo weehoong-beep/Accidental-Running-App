@@ -20,7 +20,7 @@ export function Onboarding() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}>
-        <div className="mx-auto mb-5 h-16 w-16 rounded-3xl bg-accent-gradient shadow-glow" />
+        <img src="/images/klscm-logo.svg" alt="KLSCM Half Marathon" className="mx-auto mb-5 h-16 w-16 shadow-glow" />
         <h1 className="text-xl font-bold">Set up your training block</h1>
         <p className="mx-auto mt-2 max-w-xs text-sm text-slate-400">
           We'll load your Hal Higdon Intermediate 2 half-marathon plan — 9 weeks, ending at your KLSCM race day.

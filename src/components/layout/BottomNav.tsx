@@ -4,7 +4,6 @@ import { motion } from 'framer-motion'
 const TABS = [
   { to: '/', label: 'Today', icon: 'M4 12l8-8 8 8M6 10v10h12V10' },
   { to: '/weekly', label: 'Weekly', icon: 'M4 5h16M4 10h16M4 15h10M4 20h6' },
-  { to: '/calendar', label: 'Calendar', icon: 'M4 5h16v16H4zM4 9h16M8 3v4M16 3v4' },
   { to: '/training', label: 'Runs', icon: 'M4 16l4-6 4 3 6-9' },
   { to: '/settings', label: 'Settings', icon: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' }
 ]

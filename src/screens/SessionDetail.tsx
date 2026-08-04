@@ -7,9 +7,11 @@ import type { ActivityLap, TrainingSession } from '@/lib/types'
 import { sessionTypeInfo } from '@/lib/higdon'
 import { durationToString, metersToKm, paceRangeToString, paceToString } from '@/lib/format'
 import { SessionTypeIcon } from '@/components/SessionTypeIcon'
+import { RouteIcon } from '@/components/RouteIcon'
 import { PageTransition } from '@/components/layout/PageTransition'
 import { SessionActionsSheet } from '@/components/SessionActionsSheet'
 import { useAuth } from '@/context/AuthContext'
+import { getSummaryPolyline } from '@/lib/polyline'
 
 const STATUS_STYLE: Record<string, string> = {
   completed: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20',
@@ -109,12 +111,21 @@ export function SessionDetail() {
         {/* Linked Strava activity */}
         {matchedActivity && (
           <div className="card mt-4 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Synced from Strava</p>
-            <p className="mt-1 font-semibold">{matchedActivity.name}</p>
-            <p className="text-xs text-slate-400">
-              {metersToKm(matchedActivity.distance_m)} km · {paceToString(matchedActivity.average_pace_sec_per_km)}
-              {matchedActivity.average_heartrate ? ` · ${Math.round(matchedActivity.average_heartrate)} bpm avg` : ''}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Synced from Strava</p>
+                <p className="mt-1 font-semibold">{matchedActivity.name}</p>
+                <p className="text-xs text-slate-400">
+                  {metersToKm(matchedActivity.distance_m)} km · {paceToString(matchedActivity.average_pace_sec_per_km)}
+                  {matchedActivity.average_heartrate ? ` · ${Math.round(matchedActivity.average_heartrate)} bpm avg` : ''}
+                </p>
+              </div>
+              {getSummaryPolyline(matchedActivity) && (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/5">
+                  <RouteIcon polyline={getSummaryPolyline(matchedActivity)} className="h-12 w-12" strokeColor="#2DD4BF" />
+                </div>
+              )}
+            </div>
             {runInsight && (
               <div className="mt-3 rounded-xl bg-accent-purple/10 border border-accent-purple/20 p-3">
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-purple">AI analysis</p>

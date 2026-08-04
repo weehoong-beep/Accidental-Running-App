@@ -5,7 +5,6 @@ import { useAuth } from '@/context/AuthContext'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { Auth } from '@/screens/Auth'
 import { Dashboard } from '@/screens/Dashboard'
-import { Calendar } from '@/screens/Calendar'
 import { Weekly } from '@/screens/Weekly'
 import { SessionDetail } from '@/screens/SessionDetail'
 import { Training } from '@/screens/Training'
@@ -56,7 +55,6 @@ function AuthedApp({ userId, location }: { userId: string; location: Location })
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Dashboard plan={plan} />} />
           <Route path="/weekly" element={<Weekly plan={plan} />} />
-          <Route path="/calendar" element={<Calendar plan={plan} />} />
           <Route path="/session/:id" element={<SessionDetail />} />
           <Route path="/training" element={<Training plan={plan} />} />
           <Route path="/settings" element={<Settings />} />
