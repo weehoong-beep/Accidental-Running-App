@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="KLSCM Half Marathon">
+  <defs>
+    <linearGradient id="klscm-blue" x1="15%" y1="10%" x2="90%" y2="95%">
+      <stop offset="0%" stop-color="#1E2E7A"/>
+      <stop offset="55%" stop-color="#2A4FA8"/>
+      <stop offset="100%" stop-color="#3E7BD6"/>
+    </linearGradient>
+    <clipPath id="klscm-circle-clip">
+      <circle cx="100" cy="100" r="86"/>
+    </clipPath>
+  </defs>
+
+  <circle cx="100" cy="100" r="96" fill="#ffffff"/>
+  <circle cx="100" cy="100" r="90" fill="url(#klscm-blue)"/>
+
+  <g clip-path="url(#klscm-circle-clip)">
+    <rect x="0" y="150" width="200" height="60" fill="#5BB847"/>
+
+    <g fill="#ffffff">
+      <rect x="26" y="128" width="9" height="22"/>
+      <rect x="38" y="112" width="8" height="38"/>
+
+      <rect x="48" y="90" width="16" height="60"/>
+      <rect x="50" y="82" width="12" height="8"/>
+
+      <rect x="64" y="112" width="12" height="6"/>
+
+      <rect x="76" y="80" width="16" height="70"/>
+      <rect x="78" y="72" width="12" height="8"/>
+
+      <rect x="98" y="118" width="9" height="32"/>
+
+      <rect x="112" y="70" width="6" height="80"/>
+      <circle cx="115" cy="62" r="7"/>
+      <rect x="113.5" y="40" width="3" height="22"/>
+      <circle cx="115" cy="38" r="3.5"/>
+
+      <rect x="132" y="124" width="8" height="26"/>
+      <rect x="144" y="110" width="8" height="40"/>
+      <rect x="156" y="132" width="8" height="18"/>
+    </g>
+
+    <g fill="#ffffff">
+      <circle cx="150" cy="45" r="16"/>
+      <circle cx="145" cy="40" r="15" fill="#2A4FA8"/>
+      <path d="M128,18 L129.88,23.41 L135.61,23.53 L131.04,26.99 L132.70,32.47 L128,29.2 L123.30,32.47 L124.96,26.99 L120.39,23.53 L126.12,23.41 Z"/>
+    </g>
+  </g>
+
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#ffffff" stroke-width="3"/>
+</svg>

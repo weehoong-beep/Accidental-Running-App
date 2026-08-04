@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { TrainingSession } from '@/lib/types'
 import { sessionTypeInfo } from '@/lib/higdon'
 import { SessionTypeIcon } from './SessionTypeIcon'
+import { RouteIcon } from './RouteIcon'
 import { formatWeekday, metersToKm, paceRangeToString } from '@/lib/format'
 
 const STATUS_STYLE: Record<string, string> = {
@@ -15,11 +16,14 @@ const STATUS_STYLE: Record<string, string> = {
 export function SessionCard({
   session,
   emphasize = false,
-  dateLabel
+  dateLabel,
+  routePolyline
 }: {
   session: TrainingSession
   emphasize?: boolean
   dateLabel?: string
+  /** Decoded from the matched Strava activity's summary polyline, if any. */
+  routePolyline?: string | null
 }) {
   const navigate = useNavigate()
   const info = sessionTypeInfo(session.session_type)
@@ -34,7 +38,7 @@ export function SessionCard({
       }`}
     >
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/20">
-        <SessionTypeIcon type={session.session_type} />
+        {routePolyline ? <RouteIcon polyline={routePolyline} className="h-8 w-8" /> : <SessionTypeIcon type={session.session_type} />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
