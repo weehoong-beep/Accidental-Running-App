@@ -1,15 +1,28 @@
-import { useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, useMotionValue, useSpring } from 'framer-motion'
 import { format } from 'date-fns'
-import type { TrainingPlan } from '@/lib/types'
+import type { TrainingPlan, TrainingSession } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
-import { useActivities, useSessions } from '@/lib/queries'
+import { useActivities, useSessions, useSwapSessions } from '@/lib/queries'
 import { sessionTypeInfo } from '@/lib/higdon'
 import { SessionCard } from '@/components/SessionCard'
+import { SwapConfirmDialog } from '@/components/SwapConfirmDialog'
 import { PageTransition } from '@/components/layout/PageTransition'
 import { groupSessionsByWeek } from '@/lib/stats'
 import { buildPolylineMap } from '@/lib/polyline'
 import { todayMY } from '@/lib/timezone'
+
+interface DragState {
+  session: TrainingSession
+  dateLabel: string
+  routePolyline: string | null | undefined
+  /** Other sessions in the same week that this one can be dropped onto. */
+  candidates: TrainingSession[]
+  originRect: DOMRect
+  startX: number
+  startY: number
+  hoverId: string | null
+}
 
 export function Weekly({ plan }: { plan: TrainingPlan }) {
   const { user } = useAuth()
@@ -17,9 +30,24 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
   const { data: activities = [] } = useActivities(user?.id)
   const [openWeeks, setOpenWeeks] = useState<Set<number>>(new Set())
   const todayStr = todayMY()
+  const swap = useSwapSessions()
 
   const weeks = useMemo(() => groupSessionsByWeek(sessions), [sessions])
   const polylineMap = useMemo(() => buildPolylineMap(activities), [activities])
+
+  const cardRefs = useRef(new Map<string, HTMLButtonElement>())
+  const registerCardRef = useCallback((id: string, el: HTMLButtonElement | null) => {
+    if (el) cardRefs.current.set(id, el)
+    else cardRefs.current.delete(id)
+  }, [])
+
+  const [drag, setDrag] = useState<DragState | null>(null)
+  const [pendingSwap, setPendingSwap] = useState<{ a: TrainingSession; b: TrainingSession } | null>(null)
+
+  const dx = useMotionValue(0)
+  const dy = useMotionValue(0)
+  const springX = useSpring(dx, { stiffness: 500, damping: 38, mass: 0.5 })
+  const springY = useSpring(dy, { stiffness: 500, damping: 38, mass: 0.5 })
 
   const toggleWeek = (week: number) => {
     setOpenWeeks((prev) => {
@@ -30,6 +58,78 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
     })
   }
 
+  const startDrag = (
+    session: TrainingSession,
+    dateLabel: string,
+    routePolyline: string | null | undefined,
+    candidates: TrainingSession[],
+    info: { rect: DOMRect; pointer: { x: number; y: number } }
+  ) => {
+    dx.set(0)
+    dy.set(0)
+    setDrag({
+      session,
+      dateLabel,
+      routePolyline,
+      candidates,
+      originRect: info.rect,
+      startX: info.pointer.x,
+      startY: info.pointer.y,
+      hoverId: null
+    })
+  }
+
+  useEffect(() => {
+    if (!drag) return
+    const active = drag
+
+    function onMove(e: PointerEvent) {
+      e.preventDefault()
+      dx.set(e.clientX - active.startX)
+      dy.set(e.clientY - active.startY)
+
+      let hoverId: string | null = null
+      for (const s of active.candidates) {
+        if (s.id === active.session.id || s.status === 'completed') continue
+        const el = cardRefs.current.get(s.id)
+        if (!el) continue
+        const r = el.getBoundingClientRect()
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          hoverId = s.id
+          break
+        }
+      }
+      setDrag((d) => (d && d.hoverId !== hoverId ? { ...d, hoverId } : d))
+    }
+
+    function onUp() {
+      setDrag((d) => {
+        if (d?.hoverId) {
+          const target = d.candidates.find((s) => s.id === d.hoverId)
+          if (target) setPendingSwap({ a: d.session, b: target })
+        }
+        return null
+      })
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      document.body.style.overflow = ''
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [drag?.session.id, dx, dy])
+
+  async function confirmSwap() {
+    if (!pendingSwap) return
+    await swap.mutateAsync({ aId: pendingSwap.a.id, bId: pendingSwap.b.id })
+    setPendingSwap(null)
+  }
+
   return (
     <PageTransition>
       <div className="px-5 pt-6 safe-top">
@@ -37,6 +137,7 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
         <p className="mt-1 text-xs text-slate-400">
           {plan.weeks}-week block · {plan.methodology === 'higdon' ? 'Hal Higdon Intermediate 2' : plan.methodology}
         </p>
+        <p className="mt-2 text-[11px] text-slate-500">Press and hold a session, then drag it onto another day to swap.</p>
 
         <div className="mt-5 space-y-3">
           {weeks.map((w) => {
@@ -108,14 +209,23 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
                       className="overflow-hidden"
                     >
                       <div className="space-y-2.5 border-t border-white/5 p-4 pt-3">
-                        {w.sessions.map((s) => (
-                          <SessionCard
-                            key={s.id}
-                            session={s}
-                            dateLabel={format(new Date(s.session_date + 'T00:00:00'), 'EEE, MMM d')}
-                            routePolyline={polylineMap.get(s.id)}
-                          />
-                        ))}
+                        {w.sessions.map((s) => {
+                          const dateLabel = format(new Date(s.session_date + 'T00:00:00'), 'EEE, MMM d')
+                          const routePolyline = polylineMap.get(s.id)
+                          return (
+                            <SessionCard
+                              key={s.id}
+                              session={s}
+                              dateLabel={dateLabel}
+                              routePolyline={routePolyline}
+                              draggable={!isOver && s.status !== 'completed'}
+                              isGhost={drag?.session.id === s.id}
+                              isDropTarget={drag?.hoverId === s.id}
+                              registerRef={(el) => registerCardRef(s.id, el)}
+                              onLongPress={(info) => startDrag(s, dateLabel, routePolyline, w.sessions, info)}
+                            />
+                          )
+                        })}
                       </div>
                     </motion.div>
                   )}
@@ -125,6 +235,25 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
           })}
         </div>
       </div>
+
+      {drag && (
+        <motion.div
+          className="pointer-events-none fixed z-50"
+          style={{ left: drag.originRect.left, top: drag.originRect.top, width: drag.originRect.width, x: springX, y: springY }}
+        >
+          <SessionCard session={drag.session} dateLabel={drag.dateLabel} routePolyline={drag.routePolyline} overlay />
+        </motion.div>
+      )}
+
+      {pendingSwap && (
+        <SwapConfirmDialog
+          a={pendingSwap.a}
+          b={pendingSwap.b}
+          pending={swap.isPending}
+          onConfirm={confirmSwap}
+          onCancel={() => setPendingSwap(null)}
+        />
+      )}
     </PageTransition>
   )
 }

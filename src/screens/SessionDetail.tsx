@@ -10,18 +10,10 @@ import { SessionTypeIcon } from '@/components/SessionTypeIcon'
 import { RouteIcon } from '@/components/RouteIcon'
 import { RouteMap } from '@/components/RouteMap'
 import { PageTransition } from '@/components/layout/PageTransition'
-import { SessionActionsSheet } from '@/components/SessionActionsSheet'
+import { MarkCompleteSheet } from '@/components/MarkCompleteSheet'
 import { useAuth } from '@/context/AuthContext'
 import { getSummaryPolyline } from '@/lib/polyline'
-
-type ActionTab = 'reschedule' | 'swap' | 'complete'
-
-const STATUS_STYLE: Record<string, string> = {
-  completed: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20',
-  missed: 'bg-rose-500/15 text-rose-300 border-rose-500/20',
-  rescheduled: 'bg-amber-500/15 text-amber-300 border-amber-500/20',
-  planned: 'bg-white/5 text-slate-400 border-white/10'
-}
+import { STATUS_STYLE } from '@/lib/sessionStatus'
 
 export function SessionDetail() {
   const { id } = useParams()
@@ -30,7 +22,7 @@ export function SessionDetail() {
   const { data: session, isLoading } = useSession(id)
   const { data: activities = [] } = useActivities(user?.id)
   const { data: insights = [] } = useInsights(user?.id)
-  const [sheetTab, setSheetTab] = useState<ActionTab | null>(null)
+  const [showComplete, setShowComplete] = useState(false)
 
   if (isLoading || !session) {
     return (
@@ -147,34 +139,23 @@ export function SessionDetail() {
 
         {matchedActivity && <SplitsAndLaps session={session} activityId={matchedActivity.id} />}
 
-        <div className="mt-5 mb-8 grid grid-cols-3 gap-2">
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setSheetTab('reschedule')}
-            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
-          >
-            Reschedule
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setSheetTab('swap')}
-            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
-          >
-            Swap
-          </motion.button>
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setSheetTab('complete')}
-            className="rounded-xl bg-white/8 py-3 text-xs font-semibold"
-          >
-            Mark complete
-          </motion.button>
-        </div>
+        {session.status !== 'completed' && (
+          <div className="mt-5 mb-8">
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowComplete(true)}
+              className="w-full rounded-xl bg-white/8 py-3 text-sm font-semibold"
+            >
+              Mark complete
+            </motion.button>
+            <p className="mt-2 text-center text-[11px] text-slate-500">
+              To reschedule or swap this session, press and hold its card on the Weekly Plan screen.
+            </p>
+          </div>
+        )}
       </div>
 
-      {sheetTab && (
-        <SessionActionsSheet session={session} initialTab={sheetTab} onClose={() => setSheetTab(null)} />
-      )}
+      {showComplete && <MarkCompleteSheet session={session} onClose={() => setShowComplete(false)} />}
     </PageTransition>
   )
 }
