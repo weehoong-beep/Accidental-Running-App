@@ -12,7 +12,7 @@ export type SessionType =
   | 'race'
   | 'rest'
 
-export type SessionStatus = 'planned' | 'completed' | 'missed' | 'rescheduled'
+export type SessionStatus = 'planned' | 'completed' | 'missed' | 'rescheduled' | 'swapped'
 
 export interface TrainingSession {
   id: string
