@@ -204,51 +204,40 @@ export function useSession(sessionId?: string) {
   })
 }
 
-export function useRescheduleSession() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ id, newDate }: { id: string; newDate: string }) => {
-      const { data: existing, error: getErr } = await supabase
-        .from('training_sessions')
-        .select('session_date, original_session_date')
-        .eq('id', id)
-        .single()
-      if (getErr) throw getErr
-      const { error } = await supabase
-        .from('training_sessions')
-        .update({
-          session_date: newDate,
-          original_session_date: existing.original_session_date ?? existing.session_date,
-          status: 'rescheduled'
-        })
-        .eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sessions'] })
-    }
-  })
-}
-
+/**
+ * Exchanges the dates (and original-date bookkeeping) between two sessions.
+ * Dropping an activity onto a rest day works the same way — the rest day
+ * moves to the activity's old date, which is effectively a reschedule.
+ */
 export function useSwapSessions() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ aId, bId }: { aId: string; bId: string }) => {
       const { data: rows, error } = await supabase
         .from('training_sessions')
-        .select('id, session_date')
+        .select('id, session_date, original_session_date')
         .in('id', [aId, bId])
       if (error) throw error
       const a = rows.find((r) => r.id === aId)!
       const b = rows.find((r) => r.id === bId)!
       const { error: e1 } = await supabase
         .from('training_sessions')
-        .update({ session_date: b.session_date, status: 'rescheduled', swapped_with_session_id: bId })
+        .update({
+          session_date: b.session_date,
+          original_session_date: a.original_session_date ?? a.session_date,
+          status: 'swapped',
+          swapped_with_session_id: bId
+        })
         .eq('id', aId)
       if (e1) throw e1
       const { error: e2 } = await supabase
         .from('training_sessions')
-        .update({ session_date: a.session_date, status: 'rescheduled', swapped_with_session_id: aId })
+        .update({
+          session_date: a.session_date,
+          original_session_date: b.original_session_date ?? b.session_date,
+          status: 'swapped',
+          swapped_with_session_id: aId
+        })
         .eq('id', bId)
       if (e2) throw e2
     },
