@@ -7,7 +7,6 @@ import { sessionTypeInfo } from '@/lib/higdon'
 import { SessionTypeIcon } from './SessionTypeIcon'
 import { RouteIcon } from './RouteIcon'
 import { formatWeekday, metersToKm, paceRangeToString } from '@/lib/format'
-import { STATUS_STYLE } from '@/lib/sessionStatus'
 
 /** How long a press must hold before it arms drag mode, in ms. */
 const LONG_PRESS_MS = 420
@@ -102,16 +101,18 @@ export function SessionCard({
         isDropTarget ? 'ring-2 ring-accent-teal shadow-glow scale-[1.02]' : ''
       } ${overlay ? 'shadow-2xl ring-2 ring-white/25 scale-[1.05] rotate-1 pointer-events-none' : ''}`}
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/20">
+      <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/20">
         {routePolyline ? <RouteIcon polyline={routePolyline} className="h-8 w-8" /> : <SessionTypeIcon type={session.session_type} />}
+        {session.status === 'completed' && (
+          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-bg-800">
+            <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 text-black" fill="none" stroke="currentColor" strokeWidth={3}>
+              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate font-semibold text-sm">{session.title || info.label}</p>
-          <span className={`pill border ${STATUS_STYLE[session.status] ?? STATUS_STYLE.planned}`}>
-            {session.status}
-          </span>
-        </div>
+        <p className="truncate font-semibold text-sm">{session.title || info.label}</p>
         <p className="mt-0.5 text-xs text-slate-400">
           {dateLabel ?? formatWeekday(session.session_date)}
           {session.planned_distance_m ? ` · ${metersToKm(session.planned_distance_m)} km` : ''}
