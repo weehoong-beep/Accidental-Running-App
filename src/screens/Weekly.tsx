@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, useMotionValue, useSpring } from 'framer-motion'
 import { format } from 'date-fns'
 import type { TrainingPlan, TrainingSession } from '@/lib/types'
@@ -25,6 +26,7 @@ interface DragState {
 }
 
 export function Weekly({ plan }: { plan: TrainingPlan }) {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { data: sessions = [] } = useSessions(plan.id)
   const { data: activities = [] } = useActivities(user?.id)
@@ -149,9 +151,15 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
             const isOpen = openWeeks.has(w.week)
 
             return (
-              <div key={w.week} className={`card overflow-hidden ${isOver ? 'bg-white/[0.02] opacity-60' : ''}`}>
-                <button
+              <motion.div
+                key={w.week}
+                layoutId={`week-${w.week}`}
+                className={`card overflow-hidden ${isOver ? 'bg-white/[0.02] opacity-60' : ''}`}
+              >
+                <div
                   onClick={() => toggleWeek(w.week)}
+                  role="button"
+                  tabIndex={0}
                   aria-expanded={isOpen}
                   className="w-full p-4 text-left"
                 >
@@ -196,7 +204,28 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
                       )
                     })}
                   </div>
-                </button>
+                </div>
+
+                <div className="px-4 pb-3">
+                  {isCompleted ? (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/weekly/${w.week}/report`)
+                      }}
+                      className="w-full rounded-xl bg-accent-gradient py-2 text-xs font-semibold text-white"
+                    >
+                      View weekly report
+                    </motion.button>
+                  ) : (
+                    <button disabled className="w-full cursor-default rounded-xl bg-white/5 py-2 text-xs text-slate-500">
+                      Complete this week to unlock its report
+                    </button>
+                  )}
+                </div>
 
                 <AnimatePresence initial={false}>
                   {isOpen && (
@@ -230,7 +259,7 @@ export function Weekly({ plan }: { plan: TrainingPlan }) {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
+              </motion.div>
             )
           })}
         </div>

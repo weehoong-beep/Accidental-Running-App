@@ -8,13 +8,23 @@ import { decodePolyline } from '@/lib/polyline'
  * OpenStreetMap tiles (no API key) via Leaflet, in the spirit of Strava's
  * activity page map. Renders nothing when there's no usable route.
  */
-export function RouteMap({ polyline, className = 'h-52 w-full' }: { polyline?: string | null; className?: string }) {
+export function RouteMap({
+  polyline,
+  points: pointsProp,
+  className = 'h-52 w-full'
+}: {
+  polyline?: string | null
+  /** Pre-decoded [lat, lng] points — an alternative to `polyline` when the caller already has them. */
+  points?: [number, number][]
+  className?: string
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
+  const hasRoute = !!polyline || (pointsProp?.length ?? 0) >= 2
 
   useEffect(() => {
-    if (!containerRef.current || !polyline) return
-    const points = decodePolyline(polyline)
+    if (!containerRef.current) return
+    const points = pointsProp ?? (polyline ? decodePolyline(polyline) : [])
     if (points.length < 2) return
 
     const map = L.map(containerRef.current, {
@@ -47,9 +57,9 @@ export function RouteMap({ polyline, className = 'h-52 w-full' }: { polyline?: s
       map.remove()
       mapRef.current = null
     }
-  }, [polyline])
+  }, [polyline, pointsProp])
 
-  if (!polyline) return null
+  if (!hasRoute) return null
 
   return <div ref={containerRef} className={`overflow-hidden rounded-2xl ${className}`} />
 }

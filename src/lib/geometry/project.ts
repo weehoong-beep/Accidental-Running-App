@@ -76,9 +76,9 @@ export function boundsXZ(points: ProjectedPoint[]): BoundsXZ {
  *
  * Returns new point arrays offset in place; does not mutate the input.
  */
-export function arrangeRunsSideBySide(runs: ProjectedPoint[][], gap = 15): ProjectedPoint[][] {
+export function arrangeRunsSideBySide<T extends ProjectedPoint>(runs: T[][], gap = 15): T[][] {
   let cursor = 0
-  const arranged: ProjectedPoint[][] = []
+  const arranged: T[][] = []
   for (const run of runs) {
     if (run.length === 0) {
       arranged.push(run)

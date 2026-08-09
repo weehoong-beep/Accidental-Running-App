@@ -100,9 +100,9 @@ describe('buildWeeklyReport', () => {
   it('computes a weighted average pace from activity data, not session actuals', () => {
     const sessions = [
       makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05', planned_distance_m: 5000 }),
-      makeSession({ id: 's2', week_index: 1, session_date: '2026-01-06', session_type: 'rest', planned_distance_m: null })
+      // Rest days never get marked 'completed', so isCompleted only counts runnable sessions.
+      makeSession({ id: 's2', week_index: 1, session_date: '2026-01-06', session_type: 'rest', status: 'planned', planned_distance_m: null })
     ]
-    // 5km in 1800s (6:00/km) and 10km in 3000s (5:00/km) -> weighted avg = 4800/15 = 320s/km, not (360+300)/2=330.
     const activities = [
       makeActivity({ id: 'a1', matched_session_id: 's1', distance_m: 5000, moving_time_sec: 1800 })
     ]

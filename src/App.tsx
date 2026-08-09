@@ -6,6 +6,7 @@ import { BottomNav } from '@/components/layout/BottomNav'
 import { Auth } from '@/screens/Auth'
 import { Dashboard } from '@/screens/Dashboard'
 import { Weekly } from '@/screens/Weekly'
+import { WeeklyReport } from '@/screens/WeeklyReport'
 import { SessionDetail } from '@/screens/SessionDetail'
 import { Training } from '@/screens/Training'
 import { Settings } from '@/screens/Settings'
@@ -55,6 +56,7 @@ function AuthedApp({ userId, location }: { userId: string; location: Location })
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Dashboard plan={plan} />} />
           <Route path="/weekly" element={<Weekly plan={plan} />} />
+          <Route path="/weekly/:weekIndex/report" element={<WeeklyReport plan={plan} />} />
           <Route path="/session/:id" element={<SessionDetail />} />
           <Route path="/training" element={<Training plan={plan} />} />
           <Route path="/settings" element={<Settings />} />
