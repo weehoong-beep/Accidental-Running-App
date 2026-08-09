@@ -1,4 +1,4 @@
-// Generates an AI (Claude) analysis of the whole training block so far:
+// Generates an AI (OpenAI) analysis of the whole training block so far:
 // consistency, mileage trend, adherence to the Higdon plan, and race readiness.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
@@ -9,7 +9,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 }
 
-const MODEL = "claude-sonnet-5"
+const MODEL = "gpt-4o"
 
 function paceStr(secPerKm: number | null) {
   if (!secPerKm) return "unknown"
@@ -40,11 +40,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: settings } = await supabase
       .from("integration_settings")
-      .select("anthropic_api_key")
+      .select("openai_api_key")
       .eq("user_id", userId)
       .maybeSingle()
-    if (!settings?.anthropic_api_key) {
-      return new Response(JSON.stringify({ error: "Add your Claude API key in Settings first." }), {
+    if (!settings?.openai_api_key) {
+      return new Response(JSON.stringify({ error: "Add your OpenAI API key in Settings first." }), {
         status: 400,
         headers: CORS
       })
@@ -111,12 +111,11 @@ ${weekBreakdown}
 
 Write a concise (4-6 sentence) block-level analysis: overall adherence and consistency, whether mileage is tracking on plan, any concerning gaps (e.g. missed long runs or intervals), and one clear recommendation for the athlete heading into the next block of weeks. If a goal time is set, say whether their current fitness makes it realistic. Speak directly to the athlete ("you"). No headers or bullet lists — a short paragraph.`
 
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": settings.anthropic_api_key,
-        "anthropic-version": "2023-06-01"
+        Authorization: `Bearer ${settings.openai_api_key}`
       },
       body: JSON.stringify({
         model: MODEL,
@@ -125,15 +124,15 @@ Write a concise (4-6 sentence) block-level analysis: overall adherence and consi
       })
     })
 
-    const claudeJson = await claudeRes.json()
-    if (!claudeRes.ok) {
-      return new Response(JSON.stringify({ error: claudeJson?.error?.message ?? "Claude request failed" }), {
+    const openaiJson = await openaiRes.json()
+    if (!openaiRes.ok) {
+      return new Response(JSON.stringify({ error: openaiJson?.error?.message ?? "OpenAI request failed" }), {
         status: 400,
         headers: CORS
       })
     }
 
-    const content = claudeJson.content?.[0]?.text ?? "No analysis generated."
+    const content = openaiJson.choices?.[0]?.message?.content ?? "No analysis generated."
 
     await supabase.from("insights").delete().eq("plan_id", plan_id).eq("kind", "block")
 

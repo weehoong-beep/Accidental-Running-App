@@ -133,7 +133,7 @@ export interface IntegrationSettings {
   user_id: string
   strava_client_id: string | null
   strava_client_secret: string | null
-  anthropic_api_key: string | null
+  openai_api_key: string | null
 }
 
 export interface Activity {
