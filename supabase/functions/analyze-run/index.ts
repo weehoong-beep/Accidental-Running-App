@@ -1,4 +1,4 @@
-// Generates an AI (Claude) analysis of a single synced Strava run vs its
+// Generates an AI (OpenAI) analysis of a single synced Strava run vs its
 // matched Hal Higdon training-plan session.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
@@ -9,7 +9,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 }
 
-const MODEL = "claude-sonnet-5"
+const MODEL = "gpt-4o"
 
 function paceStr(secPerKm: number | null) {
   if (!secPerKm) return "unknown"
@@ -48,11 +48,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: settings } = await supabase
       .from("integration_settings")
-      .select("anthropic_api_key")
+      .select("openai_api_key")
       .eq("user_id", userId)
       .maybeSingle()
-    if (!settings?.anthropic_api_key) {
-      return new Response(JSON.stringify({ error: "Add your Claude API key in Settings first." }), {
+    if (!settings?.openai_api_key) {
+      return new Response(JSON.stringify({ error: "Add your OpenAI API key in Settings first." }), {
         status: 400,
         headers: CORS
       })
@@ -119,12 +119,11 @@ ${
 
 Write a short (3-5 sentence), encouraging but honest analysis: did the run match the intent of the planned session (pace, effort, distance)? Judge pace and effort against this athlete's own paces and heart-rate figures above, not general rules of thumb — for example, only call an easy run "too fast" if it beat the fast end of their easy range. Call out anything notable (fell short on distance, strong tempo execution, heart rate higher than the pace suggests, heat likely a factor) and give one concrete, actionable tip for the next similar session. Speak directly to the athlete ("you"). No headers or bullet lists, just a short paragraph.`
 
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": settings.anthropic_api_key,
-        "anthropic-version": "2023-06-01"
+        Authorization: `Bearer ${settings.openai_api_key}`
       },
       body: JSON.stringify({
         model: MODEL,
@@ -133,15 +132,15 @@ Write a short (3-5 sentence), encouraging but honest analysis: did the run match
       })
     })
 
-    const claudeJson = await claudeRes.json()
-    if (!claudeRes.ok) {
-      return new Response(JSON.stringify({ error: claudeJson?.error?.message ?? "Claude request failed" }), {
+    const openaiJson = await openaiRes.json()
+    if (!openaiRes.ok) {
+      return new Response(JSON.stringify({ error: openaiJson?.error?.message ?? "OpenAI request failed" }), {
         status: 400,
         headers: CORS
       })
     }
 
-    const content = claudeJson.content?.[0]?.text ?? "No analysis generated."
+    const content = openaiJson.choices?.[0]?.message?.content ?? "No analysis generated."
 
     const { error: delErr } = await supabase.from("insights").delete().eq("activity_id", activity_id).eq("kind", "run")
     if (delErr) throw delErr

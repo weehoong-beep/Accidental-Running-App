@@ -1,4 +1,4 @@
-// Generates an AI (Claude) narrative summary of one completed training week —
+// Generates an AI (OpenAI) narrative summary of one completed training week —
 // the "kind: week" insight shown on the Weekly Running Report screen.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
@@ -9,7 +9,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 }
 
-const MODEL = "claude-sonnet-5"
+const MODEL = "gpt-4o"
 
 function paceStr(secPerKm: number | null) {
   if (!secPerKm) return "unknown"
@@ -64,11 +64,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: settings } = await supabase
       .from("integration_settings")
-      .select("anthropic_api_key")
+      .select("openai_api_key")
       .eq("user_id", userId)
       .maybeSingle()
-    if (!settings?.anthropic_api_key) {
-      return new Response(JSON.stringify({ error: "Add your Claude API key in Settings first." }), {
+    if (!settings?.openai_api_key) {
+      return new Response(JSON.stringify({ error: "Add your OpenAI API key in Settings first." }), {
         status: 400,
         headers: CORS
       })
@@ -132,12 +132,11 @@ ${
 
 Write a short (3-5 sentence), encouraging but honest narrative summary of this week: overall execution and consistency, how it compares to the prior week if given, any standout session, and one clear focus for next week. Speak directly to the athlete ("you"). No headers or bullet lists, just a short paragraph.`
 
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": settings.anthropic_api_key,
-        "anthropic-version": "2023-06-01"
+        Authorization: `Bearer ${settings.openai_api_key}`
       },
       body: JSON.stringify({
         model: MODEL,
@@ -146,15 +145,15 @@ Write a short (3-5 sentence), encouraging but honest narrative summary of this w
       })
     })
 
-    const claudeJson = await claudeRes.json()
-    if (!claudeRes.ok) {
-      return new Response(JSON.stringify({ error: claudeJson?.error?.message ?? "Claude request failed" }), {
+    const openaiJson = await openaiRes.json()
+    if (!openaiRes.ok) {
+      return new Response(JSON.stringify({ error: openaiJson?.error?.message ?? "OpenAI request failed" }), {
         status: 400,
         headers: CORS
       })
     }
 
-    const content = claudeJson.content?.[0]?.text ?? "No analysis generated."
+    const content = openaiJson.choices?.[0]?.message?.content ?? "No analysis generated."
 
     await supabase.from("insights").delete().eq("plan_id", plan_id).eq("kind", "week").eq("week_index", week_index)
 

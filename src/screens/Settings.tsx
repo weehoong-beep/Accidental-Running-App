@@ -29,7 +29,7 @@ export function Settings() {
 
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
-  const [anthropicKey, setAnthropicKey] = useState('')
+  const [openaiKey, setOpenaiKey] = useState('')
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
   const [exchanging, setExchanging] = useState(false)
   const [oauthError, setOauthError] = useState<string | null>(null)
@@ -38,7 +38,7 @@ export function Settings() {
     if (settings) {
       setClientId(settings.strava_client_id ?? '')
       setClientSecret(settings.strava_client_secret ?? '')
-      setAnthropicKey(settings.anthropic_api_key ?? '')
+      setOpenaiKey(settings.openai_api_key ?? '')
     }
   }, [settings])
 
@@ -81,7 +81,7 @@ export function Settings() {
 
   async function handleSaveAI() {
     if (!user) return
-    await saveSettings.mutateAsync({ user_id: user.id, anthropic_api_key: anthropicKey.trim() })
+    await saveSettings.mutateAsync({ user_id: user.id, openai_api_key: openaiKey.trim() })
     setSavedMsg('AI key saved')
     setTimeout(() => setSavedMsg(null), 2500)
   }
@@ -226,18 +226,18 @@ export function Settings() {
         {/* AI */}
         <Section title="AI run analysis">
           <p className="text-xs leading-relaxed text-slate-400">
-            Run analysis is powered by Claude (Anthropic). Get an API key from{' '}
-            <a className="text-accent-teal underline" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-              console.anthropic.com/settings/keys
+            Run analysis is powered by OpenAI (GPT-4o). Get an API key from{' '}
+            <a className="text-accent-teal underline" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">
+              platform.openai.com/api-keys
             </a>{' '}
             and paste it below. It's stored securely and only used server-side to analyze your runs.
           </p>
           <input
             className="mt-3 w-full rounded-xl bg-bg-800 border border-white/10 px-4 py-3 text-sm outline-none"
-            placeholder="sk-ant-…"
+            placeholder="sk-…"
             type="password"
-            value={anthropicKey}
-            onChange={(e) => setAnthropicKey(e.target.value)}
+            value={openaiKey}
+            onChange={(e) => setOpenaiKey(e.target.value)}
           />
           <button
             onClick={handleSaveAI}
