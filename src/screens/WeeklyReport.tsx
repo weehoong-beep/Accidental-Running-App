@@ -4,14 +4,16 @@ import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { format } from 'date-fns'
 import type { TrainingPlan } from '@/lib/types'
 import { useAuth } from '@/context/AuthContext'
-import { useAnalyzeWeek, useWeeklyReport } from '@/lib/queries'
+import { useAnalyzeWeek, useRaceEvent, useWeeklyReport } from '@/lib/queries'
 import type {
   CadenceSummary,
   ElevationPaceCorrelation,
   HrZoneBreakdown,
+  KeyStats,
   RecoveryPattern,
   RunSplitsSummary,
   SessionAdherence,
+  StatStatus,
   WeekTrendPoint,
   WeeklyReport as WeeklyReportData
 } from '@/lib/weeklyReport'
@@ -33,7 +35,13 @@ export function WeeklyReport({ plan }: { plan: TrainingPlan }) {
   const { user } = useAuth()
   const weekIndex = Number(weekIndexParam)
 
-  const { data: report, isLoading, isFetchingStreams } = useWeeklyReport(plan.id, Number.isFinite(weekIndex) ? weekIndex : undefined, user?.id)
+  const { data: raceEvent } = useRaceEvent(plan.race_event_id)
+  const { data: report, isLoading, isFetchingStreams } = useWeeklyReport(
+    plan.id,
+    Number.isFinite(weekIndex) ? weekIndex : undefined,
+    user?.id,
+    raceEvent ?? null
+  )
   const analyzeWeek = useAnalyzeWeek()
   const [colorMode, setColorMode] = useState<ColorMode>('pace')
   const reduceMotion = useReducedMotion()
@@ -90,6 +98,8 @@ export function WeeklyReport({ plan }: { plan: TrainingPlan }) {
             </HeroStat>
           </div>
         </motion.div>
+
+        <KeyStatsSection keyStats={report.keyStats} />
 
         <div ref={ribbonSectionRef} className="mt-5">
           <div className="mb-2 flex items-center justify-between">
@@ -211,6 +221,62 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div className="card mt-4 p-4">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       {children}
+    </div>
+  )
+}
+
+const STATUS_EMOJI: Record<StatStatus, string> = { good: '🟢', warn: '🟡', bad: '🔴' }
+const TREND_ARROW: Record<NonNullable<KeyStats['easyPace']['trend']>, string> = { up: '↑', down: '↓', flat: '→' }
+
+function KeyStatsSection({ keyStats }: { keyStats: KeyStats }) {
+  const easyPaceLabel =
+    keyStats.easyPace.paceSecPerKm != null
+      ? `${paceToString(Math.round(keyStats.easyPace.paceSecPerKm))}${
+          keyStats.easyPace.avgHr != null ? ` @ ${Math.round(keyStats.easyPace.avgHr)} bpm` : ''
+        }${keyStats.easyPace.trend ? ` ${TREND_ARROW[keyStats.easyPace.trend]}` : ''}`
+      : '—'
+
+  return (
+    <Section title="Week at a glance">
+      <div className="space-y-2 text-sm">
+        <StatRow label="Mileage" value={`${keyStats.mileageKm.toFixed(1)} / ${keyStats.mileageTargetKm.toFixed(1)} km`} status={keyStats.mileageStatus} />
+        <StatRow label="Runs" value={`${keyStats.runsCompleted} / ${keyStats.runsPlanned}`} status={keyStats.runsStatus} />
+        {keyStats.avgEasyHr != null && <StatRow label="Avg HR (easy runs)" value={`${Math.round(keyStats.avgEasyHr)} bpm`} />}
+        {keyStats.longRun && (
+          <StatRow
+            label="Long run"
+            value={`${metersToKmLabel(keyStats.longRun.distanceM)} km${
+              keyStats.longRun.paceSecPerKm != null ? ` @ ${paceToString(Math.round(keyStats.longRun.paceSecPerKm))}` : ''
+            }`}
+          />
+        )}
+        {keyStats.restingHr != null && <StatRow label="Resting HR" value={`${keyStats.restingHr} bpm`} />}
+        {keyStats.marathonReadinessPct != null && (
+          <StatRow label="Marathon readiness" value={`${Math.round(keyStats.marathonReadinessPct)}%`} />
+        )}
+        <StatRow label="Easy pace" value={easyPaceLabel} />
+        {keyStats.qualitySessions.map((q, i) => (
+          <StatRow key={i} label="Quality" value={q.label} />
+        ))}
+        <StatRow label="Elevation gain" value={`${Math.round(keyStats.elevationGainM)} m`} />
+        {keyStats.avgRpe != null && <StatRow label="Avg RPE" value={`${keyStats.avgRpe.toFixed(1)}/10`} />}
+      </div>
+    </Section>
+  )
+}
+
+function metersToKmLabel(m: number): string {
+  return (m / 1000).toFixed(1)
+}
+
+function StatRow({ label, value, status }: { label: string; value: string; status?: StatStatus }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-slate-400">{label}</span>
+      <span className="font-semibold text-slate-100">
+        {value}
+        {status && <span className="ml-1.5">{STATUS_EMOJI[status]}</span>}
+      </span>
     </div>
   )
 }

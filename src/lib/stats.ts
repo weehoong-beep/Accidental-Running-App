@@ -24,8 +24,12 @@ export function groupSessionsByWeek(sessions: TrainingSession[]): WeekGroup[] {
     .sort(([a], [b]) => a - b)
     .map(([week, list]) => {
       const sorted = list.sort((a, b) => a.session_date.localeCompare(b.session_date))
-      const completed = sorted.filter((s) => s.status === 'completed').length
-      const runnable = sorted.filter((s) => s.session_type !== 'rest').length
+      // Scoped to runnable (non-rest) sessions only — a rest day marked
+      // 'completed' must never count toward this, or it can push `completed`
+      // above `runnable` and the week would never register as fully done.
+      const runnableSessions = sorted.filter((s) => s.session_type !== 'rest')
+      const completed = runnableSessions.filter((s) => s.status === 'completed').length
+      const runnable = runnableSessions.length
       return {
         week,
         sessions: sorted,

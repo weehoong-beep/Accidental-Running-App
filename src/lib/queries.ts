@@ -468,7 +468,12 @@ export function useWeekStreams(activityIds: string[]) {
  * of its own beyond the stream fetch, instead assembling already-cached
  * sessions/activities/profile/records/insights via `buildWeeklyReport`.
  */
-export function useWeeklyReport(planId: string | undefined, weekIndex: number | undefined, userId: string | undefined) {
+export function useWeeklyReport(
+  planId: string | undefined,
+  weekIndex: number | undefined,
+  userId: string | undefined,
+  raceEvent: RaceEvent | null = null
+) {
   const sessionsQ = useSessions(planId)
   const activitiesQ = useActivities(userId)
   const profileQ = useProfile(userId)
@@ -497,13 +502,14 @@ export function useWeeklyReport(planId: string | undefined, weekIndex: number | 
       allActivities: activitiesQ.data,
       profile: profileQ.data ?? null,
       personalRecords: recordsQ.data ?? [],
+      raceEvent,
       narrativeInsight
     })
     // `streamsQ.data` isn't read directly (buildWeeklyReport re-reads
     // `activitiesQ.data`, which is invalidated once streams land) — it's a
     // dependency purely so this recomputes once the fetch finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planId, weekIndex, sessionsQ.data, activitiesQ.data, profileQ.data, recordsQ.data, insightsQ.data, streamsQ.data])
+  }, [planId, weekIndex, sessionsQ.data, activitiesQ.data, profileQ.data, recordsQ.data, insightsQ.data, streamsQ.data, raceEvent])
 
   return {
     data,

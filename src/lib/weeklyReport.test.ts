@@ -46,6 +46,7 @@ function makeActivity(overrides: Partial<Activity> & { id: string; matched_sessi
     average_cadence: null,
     average_temp: null,
     suffer_score: null,
+    perceived_exertion: null,
     gear_id: null,
     fetched_detail_at: null,
     raw: undefined,
@@ -233,5 +234,184 @@ describe('buildWeeklyReport', () => {
     })
     expect(report!.personalBests).toHaveLength(1)
     expect(report!.personalBests[0].distanceLabel).toBe('5K')
+  })
+
+  describe('keyStats', () => {
+    it('flags mileage and run-count status against target', () => {
+      const sessions = [
+        makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05', planned_distance_m: 40000 })
+      ]
+      const activities = [makeActivity({ id: 'a1', matched_session_id: 's1', distance_m: 38400 })]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile: null,
+        personalRecords: [],
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.mileageKm).toBeCloseTo(38.4, 1)
+      expect(report!.keyStats.mileageTargetKm).toBeCloseTo(40, 1)
+      expect(report!.keyStats.mileageStatus).toBe('good') // 96% of target
+      expect(report!.keyStats.runsCompleted).toBe(1)
+      expect(report!.keyStats.runsPlanned).toBe(1)
+      expect(report!.keyStats.runsStatus).toBe('good')
+    })
+
+    it('reports the long run distance and pace separately from other easy-effort runs', () => {
+      const sessions = [
+        makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05', session_type: 'long', planned_distance_m: 18000 })
+      ]
+      const activities = [
+        makeActivity({ id: 'a1', matched_session_id: 's1', distance_m: 18000, moving_time_sec: 408 * 18 }) // 6:48/km = 408 sec/km
+      ]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile: null,
+        personalRecords: [],
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.longRun).not.toBeNull()
+      expect(report!.keyStats.longRun!.distanceM).toBe(18000)
+      expect(report!.keyStats.longRun!.paceSecPerKm).toBeCloseTo(408, 5)
+    })
+
+    it('picks up the repeat count and distance from a completed quality session', () => {
+      const sessions = [
+        makeSession({
+          id: 's1',
+          week_index: 1,
+          session_date: '2026-01-05',
+          session_type: 'interval',
+          structured_steps: [{ label: 'warmup', duration_sec: 600 }, { label: 'reps', repeat: 6, distance_m: 800 }]
+        })
+      ]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: [],
+        profile: null,
+        personalRecords: [],
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.qualitySessions).toEqual([{ sessionType: 'interval', label: '6 × 800m completed' }])
+    })
+
+    it('averages perceived_exertion across the week, ignoring runs without it', () => {
+      const sessions = [
+        makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05' }),
+        makeSession({ id: 's2', week_index: 1, session_date: '2026-01-06', session_type: 'tempo' })
+      ]
+      const activities = [
+        makeActivity({ id: 'a1', matched_session_id: 's1', perceived_exertion: 4 }),
+        makeActivity({ id: 'a2', matched_session_id: 's2', perceived_exertion: 6 })
+      ]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile: null,
+        personalRecords: [],
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.avgRpe).toBe(5)
+    })
+
+    it('flags an upward heart-rate trend when easy-effort HR rises week over week', () => {
+      const sessions = [
+        makeSession({ id: 'w0', week_index: 0, session_date: '2025-12-29' }),
+        makeSession({ id: 'w1', week_index: 1, session_date: '2026-01-05' })
+      ]
+      const activities = [
+        makeActivity({ id: 'a0', matched_session_id: 'w0', average_heartrate: 135 }),
+        makeActivity({ id: 'a1', matched_session_id: 'w1', average_heartrate: 141 })
+      ]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile: null,
+        personalRecords: [],
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.easyPace.avgHr).toBeCloseTo(141, 5)
+      expect(report!.keyStats.easyPace.trend).toBe('up')
+    })
+
+    it('blends consistency, volume, and goal pace into a marathon readiness percentage', () => {
+      const sessions = [makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05', planned_distance_m: 5000 })]
+      const activities = [makeActivity({ id: 'a1', matched_session_id: 's1', distance_m: 5000 })]
+      const profile: Profile = {
+        id: 'u1',
+        full_name: null,
+        timezone: 'Asia/Kuala_Lumpur',
+        units: 'metric',
+        resting_hr: 50,
+        max_hr: 190,
+        threshold_pace_sec_per_km: null,
+        vdot: 50,
+        weight_kg: null,
+        height_cm: null,
+        date_of_birth: null,
+        sex: null,
+        lthr: null,
+        hr_zone_model: 'karvonen',
+        pace_source: 'derived',
+        easy_pace_min_sec: null,
+        easy_pace_max_sec: null,
+        marathon_pace_sec: null,
+        interval_pace_sec: null,
+        repetition_pace_sec: null,
+        long_run_day: null,
+        days_per_week: null
+      }
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile,
+        personalRecords: [],
+        raceEvent: {
+          id: 'race1',
+          user_id: 'u1',
+          name: 'Test Half',
+          race_date: '2026-06-01',
+          distance_m: 21097,
+          distance_label: 'Half Marathon',
+          goal_time_sec: 6000, // an easy goal for VDOT 50, so this component should read near 100
+          priority: 'A',
+          location: null,
+          notes: null
+        },
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.marathonReadinessPct).not.toBeNull()
+      expect(report!.keyStats.marathonReadinessPct!).toBeGreaterThan(0)
+      expect(report!.keyStats.marathonReadinessPct!).toBeLessThanOrEqual(100)
+    })
+
+    it('still produces a readiness estimate from consistency and volume alone when there is no goal time or VDOT', () => {
+      const sessions = [makeSession({ id: 's1', week_index: 1, session_date: '2026-01-05', planned_distance_m: 5000 })]
+      const activities = [makeActivity({ id: 'a1', matched_session_id: 's1', distance_m: 5000 })]
+      const report = buildWeeklyReport({
+        planId: 'plan1',
+        weekIndex: 1,
+        allSessions: sessions,
+        allActivities: activities,
+        profile: null,
+        personalRecords: [],
+        raceEvent: null,
+        narrativeInsight: null
+      })
+      expect(report!.keyStats.marathonReadinessPct).toBe(100) // full consistency + full mileage attainment
+    })
   })
 })
