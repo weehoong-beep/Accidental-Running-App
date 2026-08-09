@@ -38,7 +38,8 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           motion: ['framer-motion'],
-          data: ['@supabase/supabase-js', '@tanstack/react-query', 'date-fns']
+          data: ['@supabase/supabase-js', '@tanstack/react-query', 'date-fns'],
+          three: ['three', '@react-three/fiber', '@react-three/drei']
         }
       }
     }

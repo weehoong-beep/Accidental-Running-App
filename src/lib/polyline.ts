@@ -51,3 +51,36 @@ export function buildPolylineMap(activities: Activity[]): Map<string, string> {
   }
   return map
 }
+
+const EARTH_RADIUS_M = 6371000
+
+function toRadians(deg: number): number {
+  return (deg * Math.PI) / 180
+}
+
+/** Great-circle distance between two [lat, lng] points, in meters. */
+function haversineM(a: [number, number], b: [number, number]): number {
+  const [lat1, lng1] = a
+  const [lat2, lng2] = b
+  const dLat = toRadians(lat2 - lat1)
+  const dLng = toRadians(lng2 - lng1)
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+/**
+ * Cumulative distance in meters at each point of a decoded polyline, starting
+ * at 0. Used to line up a summary polyline (lat/lng only) against per-split
+ * distance data for the Weekly Report's route ribbon.
+ */
+export function cumulativeDistances(points: [number, number][]): number[] {
+  const out: number[] = []
+  let total = 0
+  for (let i = 0; i < points.length; i++) {
+    if (i > 0) total += haversineM(points[i - 1], points[i])
+    out.push(total)
+  }
+  return out
+}

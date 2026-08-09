@@ -164,15 +164,19 @@ export interface Activity {
   fetched_detail_at: string | null
   /** Strava's raw activity payload, e.g. `raw.map.summary_polyline` for the route shape. */
   raw?: { map?: { summary_polyline?: string | null } } & Record<string, any>
+  /** Cached GET /activities/{id}/streams response, fetched on demand for the Weekly Report's 3D ribbon. */
+  stream_data?: ActivityStreams | null
 }
 
 export interface Insight {
   id: string
   user_id: string
-  kind: 'run' | 'block'
+  kind: 'run' | 'block' | 'week'
   activity_id: string | null
   session_id: string | null
   plan_id: string | null
+  /** Set together with plan_id for kind='week' narratives. */
+  week_index: number | null
   insight_date: string | null
   content: string
   model: string | null
@@ -228,4 +232,18 @@ export interface ActivityDetail {
   splits_metric?: ActivitySplit[]
   laps?: ActivityLap[]
   best_efforts?: BestEffort[]
+}
+
+// ---------------------------------------------------------------------------
+// Strava's per-point stream data, fetched on demand for the Weekly Report's
+// 3D route ribbon and cached on `activities.stream_data`.
+// ---------------------------------------------------------------------------
+
+/** One `GET /activities/{id}/streams` series, keyed by stream type (`key_by_type=true`). */
+export interface ActivityStreams {
+  latlng?: { data: [number, number][] }
+  altitude?: { data: number[] }
+  heartrate?: { data: number[] }
+  distance?: { data: number[] }
+  time?: { data: number[] }
 }

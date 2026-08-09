@@ -70,7 +70,7 @@ function paceFromVelocity(metersPerMin: number): number {
  * textbook bands — e.g. at VDOT 50 these yield E 5:38–5:07, M 4:29, T 4:15,
  * I 3:50, R 3:30 per km.
  */
-const INTENSITY = {
+export const INTENSITY = {
   easySlow: 0.62,
   easyFast: 0.7,
   marathon: 0.825,
