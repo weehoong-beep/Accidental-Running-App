@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { buildWeeklyReport } from './weeklyReport'
 import type {
   Activity,
   ActivityDetail,
@@ -412,6 +414,103 @@ export function useAnalyzeBlock() {
     mutationFn: async (planId: string) => callFunction('analyze-block', { plan_id: planId }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['insights'] })
   })
+}
+
+export function useAnalyzeWeek() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ planId, weekIndex }: { planId: string; weekIndex: number }) =>
+      callFunction('analyze-week', { plan_id: planId, week_index: weekIndex }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['insights'] })
+  })
+}
+
+/**
+ * Fetches Strava's per-point GPS/elevation/heart-rate stream for whichever of
+ * `activityIds` don't already have it cached on `activities.stream_data`, so
+ * the Weekly Report's 3D route ribbon can render at full fidelity. Scoped to
+ * one week's activities and called only when a report is opened, rather than
+ * during general sync, to keep Strava API usage bounded to weeks people
+ * actually view.
+ */
+export function useWeekStreams(activityIds: string[]) {
+  const qc = useQueryClient()
+  const key = ['activity-streams', ...[...activityIds].sort()]
+  return useQuery({
+    queryKey: key,
+    enabled: activityIds.length > 0,
+    queryFn: async () => {
+      const { data: existing, error } = await supabase
+        .from('activities')
+        .select('id, stream_data')
+        .in('id', activityIds)
+      if (error) throw error
+
+      const missing = (existing ?? []).filter((a) => !a.stream_data).map((a) => a.id)
+      if (missing.length > 0) {
+        await callFunction('fetch-week-streams', { activity_ids: missing })
+        qc.invalidateQueries({ queryKey: ['activities'] })
+      }
+
+      const { data: fresh, error: freshErr } = await supabase
+        .from('activities')
+        .select('id, stream_data')
+        .in('id', activityIds)
+      if (freshErr) throw freshErr
+      return fresh ?? []
+    }
+  })
+}
+
+/**
+ * The Weekly Running Report for one completed week — hero stats, technical
+ * analysis, and 3D route-ribbon data. A composition hook: it issues no query
+ * of its own beyond the stream fetch, instead assembling already-cached
+ * sessions/activities/profile/records/insights via `buildWeeklyReport`.
+ */
+export function useWeeklyReport(planId: string | undefined, weekIndex: number | undefined, userId: string | undefined) {
+  const sessionsQ = useSessions(planId)
+  const activitiesQ = useActivities(userId)
+  const profileQ = useProfile(userId)
+  const recordsQ = usePersonalRecords(userId)
+  const insightsQ = useInsights(userId)
+
+  const weekActivityIds = useMemo(() => {
+    if (weekIndex == null) return []
+    return (sessionsQ.data ?? [])
+      .filter((s) => s.week_index === weekIndex)
+      .map((s) => (activitiesQ.data ?? []).find((a) => a.matched_session_id === s.id)?.id)
+      .filter((id): id is string => !!id)
+  }, [sessionsQ.data, activitiesQ.data, weekIndex])
+
+  const streamsQ = useWeekStreams(weekActivityIds)
+
+  const data = useMemo(() => {
+    if (planId == null || weekIndex == null) return undefined
+    if (!sessionsQ.data || !activitiesQ.data) return undefined
+    const narrativeInsight =
+      insightsQ.data?.find((i) => i.kind === 'week' && i.plan_id === planId && i.week_index === weekIndex) ?? null
+    return buildWeeklyReport({
+      planId,
+      weekIndex,
+      allSessions: sessionsQ.data,
+      allActivities: activitiesQ.data,
+      profile: profileQ.data ?? null,
+      personalRecords: recordsQ.data ?? [],
+      narrativeInsight
+    })
+    // `streamsQ.data` isn't read directly (buildWeeklyReport re-reads
+    // `activitiesQ.data`, which is invalidated once streams land) — it's a
+    // dependency purely so this recomputes once the fetch finishes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId, weekIndex, sessionsQ.data, activitiesQ.data, profileQ.data, recordsQ.data, insightsQ.data, streamsQ.data])
+
+  return {
+    data,
+    isLoading: sessionsQ.isLoading || activitiesQ.isLoading || profileQ.isLoading || recordsQ.isLoading,
+    isFetchingStreams: streamsQ.isFetching,
+    error: sessionsQ.error || activitiesQ.error
+  }
 }
 
 /**

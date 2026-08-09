@@ -10,6 +10,8 @@ export interface WeekGroup {
   km: number
   completed: number
   runnable: number
+  /** True once every runnable (non-rest) session in the week is completed. */
+  isCompleted: boolean
 }
 
 export function groupSessionsByWeek(sessions: TrainingSession[]): WeekGroup[] {
@@ -22,14 +24,17 @@ export function groupSessionsByWeek(sessions: TrainingSession[]): WeekGroup[] {
     .sort(([a], [b]) => a - b)
     .map(([week, list]) => {
       const sorted = list.sort((a, b) => a.session_date.localeCompare(b.session_date))
+      const completed = sorted.filter((s) => s.status === 'completed').length
+      const runnable = sorted.filter((s) => s.session_type !== 'rest').length
       return {
         week,
         sessions: sorted,
         startDate: sorted[0]?.session_date,
         endDate: sorted[sorted.length - 1]?.session_date,
         km: sorted.reduce((sum, s) => sum + (s.planned_distance_m ?? 0), 0) / 1000,
-        completed: sorted.filter((s) => s.status === 'completed').length,
-        runnable: sorted.filter((s) => s.session_type !== 'rest').length
+        completed,
+        runnable,
+        isCompleted: runnable > 0 && completed === runnable
       }
     })
 }
