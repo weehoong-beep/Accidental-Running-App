@@ -159,6 +159,8 @@ export interface Activity {
   average_temp: number | null
   /** Strava "Relative Effort". Only present when the run recorded heart rate. */
   suffer_score: number | null
+  /** Athlete-entered Rate of Perceived Exertion (1-10) from Strava, when set. */
+  perceived_exertion: number | null
   gear_id: string | null
   /** When GET /activities/{id} was merged into `raw`. Null = splits/laps not yet fetched. */
   fetched_detail_at: string | null

@@ -15,11 +15,12 @@ import type {
   Insight,
   PersonalRecord,
   Profile,
+  RaceEvent,
   SessionType,
   TrainingSession
 } from './types'
 import { groupSessionsByWeek, type WeekGroup } from './stats'
-import { hrZones, zoneForHr, INTENSITY, type HrZone } from './physiology'
+import { hrZones, zoneForHr, timeForDistanceAtVdot, INTENSITY, type HrZone } from './physiology'
 import { cumulativeDistances, decodePolyline } from './polyline'
 import { shiftDateString } from './timezone'
 
@@ -138,6 +139,41 @@ export interface DataQualityFlags {
   hasStreamData: boolean
 }
 
+/** Traffic-light read on how a stat compares to its target. */
+export type StatStatus = 'good' | 'warn' | 'bad'
+
+export interface QualitySessionSummary {
+  sessionType: SessionType
+  /** e.g. "6 × 800m completed". */
+  label: string
+}
+
+/**
+ * The "week at a glance" stat line — the small set of numbers a runner scans
+ * first. Distinct from the deeper `WeeklyReport` sections below it, which
+ * this glance summarizes and links out to.
+ */
+export interface KeyStats {
+  mileageKm: number
+  mileageTargetKm: number
+  mileageStatus: StatStatus
+  runsCompleted: number
+  runsPlanned: number
+  runsStatus: StatStatus
+  /** Avg heart rate across 'easy'-only completed runs. */
+  avgEasyHr: number | null
+  longRun: { distanceM: number; paceSecPerKm: number | null } | null
+  restingHr: number | null
+  /** Composite estimate (0-100) blending consistency, volume attainment, and pace-vs-goal fitness — see computeMarathonReadiness. */
+  marathonReadinessPct: number | null
+  /** Pace/HR across 'easy'+'long' completed runs — the broader easy-effort pool. */
+  easyPace: { paceSecPerKm: number | null; avgHr: number | null; trend: 'up' | 'down' | 'flat' | null }
+  qualitySessions: QualitySessionSummary[]
+  elevationGainM: number
+  /** Athlete-entered Strava RPE (1-10), averaged across the week's completed runs. */
+  avgRpe: number | null
+}
+
 export interface WeeklyReport {
   planId: string
   weekIndex: number
@@ -145,6 +181,7 @@ export interface WeeklyReport {
   endDate: string | undefined
   isCompleted: boolean
 
+  keyStats: KeyStats
   hero: HeroStats
   splits: RunSplitsSummary[]
   hrZones: HrZoneBreakdown
@@ -169,6 +206,8 @@ export interface BuildWeeklyReportInput {
   allActivities: Activity[]
   profile: Profile | null
   personalRecords: PersonalRecord[]
+  /** The plan's linked race, if any — used for the marathon-readiness estimate. Default null. */
+  raceEvent?: RaceEvent | null
   /** The `kind: 'week'` insight for this plan/week, if one has been generated. */
   narrativeInsight: Insight | null
   /** How many prior weeks of trend to include. Default 4. */
@@ -576,6 +615,150 @@ function computePersonalBests(sessions: TrainingSession[], activities: Activity[
 }
 
 // ---------------------------------------------------------------------------
+// Key stats — the "week at a glance" line.
+// ---------------------------------------------------------------------------
+
+const EASY_EFFORT_TYPES = new Set<SessionType>(['easy', 'long'])
+
+function statusFor(pct: number): StatStatus {
+  if (pct >= 95) return 'good'
+  if (pct >= 80) return 'warn'
+  return 'bad'
+}
+
+function completedActivitiesOfType(sessions: TrainingSession[], activities: Activity[], types: Set<SessionType>) {
+  return sessions
+    .filter((s) => types.has(s.session_type) && s.status === 'completed')
+    .map((s) => findActivity(s.id, activities))
+    .filter((a): a is Activity => !!a)
+}
+
+function computeAvgHrForTypes(sessions: TrainingSession[], activities: Activity[], types: Set<SessionType>): number | null {
+  const hrs = completedActivitiesOfType(sessions, activities, types)
+    .map((a) => a.average_heartrate)
+    .filter((hr): hr is number => hr != null)
+  return hrs.length > 0 ? mean(hrs) : null
+}
+
+/** Weighted (totalTime/totalDistance) average pace across every completed run of the given types. */
+function computeAvgPaceForTypes(sessions: TrainingSession[], activities: Activity[], types: Set<SessionType>): number | null {
+  let totalDistanceM = 0
+  let totalTimeSec = 0
+  for (const s of sessions) {
+    if (!types.has(s.session_type) || s.status !== 'completed') continue
+    const activity = findActivity(s.id, activities)
+    const distanceM = activity?.distance_m ?? s.actual_distance_m
+    const timeSec = activity?.moving_time_sec ?? s.actual_duration_sec
+    if (distanceM && timeSec) {
+      totalDistanceM += distanceM
+      totalTimeSec += timeSec
+    }
+  }
+  return totalDistanceM > 0 ? totalTimeSec / (totalDistanceM / 1000) : null
+}
+
+function computeLongRun(sessions: TrainingSession[], activities: Activity[]): KeyStats['longRun'] {
+  const longSession = sessions.find((s) => s.session_type === 'long' && s.status === 'completed')
+  if (!longSession) return null
+  const activity = findActivity(longSession.id, activities)
+  const distanceM = activity?.distance_m ?? longSession.actual_distance_m ?? longSession.planned_distance_m ?? 0
+  const timeSec = activity?.moving_time_sec ?? longSession.actual_duration_sec ?? null
+  return { distanceM, paceSecPerKm: timeSec && distanceM > 0 ? timeSec / (distanceM / 1000) : null }
+}
+
+/** Rep-based structured steps (e.g. "6 x 800m") executed this week — tempo/interval sessions marked complete. */
+function computeQualitySessions(sessions: TrainingSession[]): QualitySessionSummary[] {
+  const result: QualitySessionSummary[] = []
+  for (const s of sessions) {
+    if (s.status !== 'completed' || !s.structured_steps) continue
+    const repStep = s.structured_steps.find((step) => step.repeat && step.repeat > 1)
+    if (!repStep) continue
+    const unit = repStep.distance_m ? `${repStep.distance_m}m` : repStep.duration_sec ? `${Math.round(repStep.duration_sec / 60)}min` : null
+    if (!unit) continue
+    result.push({ sessionType: s.session_type, label: `${repStep.repeat} × ${unit} completed` })
+  }
+  return result
+}
+
+function computeAvgRpe(sessions: TrainingSession[], activities: Activity[]): number | null {
+  const values = sessions
+    .filter((s) => s.session_type !== 'rest' && s.status === 'completed')
+    .map((s) => findActivity(s.id, activities)?.perceived_exertion)
+    .filter((v): v is number => v != null)
+  return values.length > 0 ? mean(values) : null
+}
+
+/**
+ * A 0-100 estimate blending three independent signals, averaged over whichever
+ * are available: adherence to the plan so far, this week's mileage attainment,
+ * and (when a goal time and VDOT are both on record) how the athlete's current
+ * fitness compares to the pace their goal requires. Not a validated sports-science
+ * formula — a practical blend of what this app already tracks.
+ */
+function computeMarathonReadiness(
+  weekIndex: number,
+  weeks: WeekGroup[],
+  hero: HeroStats,
+  profile: Profile | null,
+  raceEvent: RaceEvent | null
+): number | null {
+  const scores: number[] = []
+
+  const toDate = weeks.filter((w) => w.week <= weekIndex)
+  const runnableToDate = toDate.reduce((sum, w) => sum + w.runnable, 0)
+  const completedToDate = toDate.reduce((sum, w) => sum + w.completed, 0)
+  if (runnableToDate > 0) scores.push((completedToDate / runnableToDate) * 100)
+
+  if (hero.distanceVsPlanPct != null) scores.push(Math.min(100, hero.distanceVsPlanPct))
+
+  if (raceEvent?.goal_time_sec && raceEvent.distance_m && profile?.vdot) {
+    const predictedSec = timeForDistanceAtVdot(profile.vdot, raceEvent.distance_m)
+    if (predictedSec) scores.push(Math.min(100, (raceEvent.goal_time_sec / predictedSec) * 100))
+  }
+
+  return scores.length > 0 ? mean(scores) : null
+}
+
+function computeKeyStats(
+  weekIndex: number,
+  weeks: WeekGroup[],
+  week: WeekGroup,
+  hero: HeroStats,
+  allActivities: Activity[],
+  profile: Profile | null,
+  raceEvent: RaceEvent | null
+): KeyStats {
+  const sessions = week.sessions
+  const easyEffortHr = computeAvgHrForTypes(sessions, allActivities, EASY_EFFORT_TYPES)
+  const easyEffortPace = computeAvgPaceForTypes(sessions, allActivities, EASY_EFFORT_TYPES)
+
+  const prevWeek = weeks.find((w) => w.week === weekIndex - 1)
+  const prevEasyEffortHr = prevWeek ? computeAvgHrForTypes(prevWeek.sessions, allActivities, EASY_EFFORT_TYPES) : null
+  let trend: KeyStats['easyPace']['trend'] = null
+  if (easyEffortHr != null && prevEasyEffortHr != null) {
+    const diff = easyEffortHr - prevEasyEffortHr
+    trend = Math.abs(diff) < 1 ? 'flat' : diff > 0 ? 'up' : 'down'
+  }
+
+  return {
+    mileageKm: hero.totalDistanceM / 1000,
+    mileageTargetKm: hero.plannedDistanceM / 1000,
+    mileageStatus: hero.distanceVsPlanPct != null ? statusFor(hero.distanceVsPlanPct) : 'bad',
+    runsCompleted: week.completed,
+    runsPlanned: week.runnable,
+    runsStatus: week.runnable > 0 ? statusFor((week.completed / week.runnable) * 100) : 'bad',
+    avgEasyHr: computeAvgHrForTypes(sessions, allActivities, new Set(['easy'])),
+    longRun: computeLongRun(sessions, allActivities),
+    restingHr: profile?.resting_hr ?? null,
+    marathonReadinessPct: computeMarathonReadiness(weekIndex, weeks, hero, profile, raceEvent),
+    easyPace: { paceSecPerKm: easyEffortPace, avgHr: easyEffortHr, trend },
+    qualitySessions: computeQualitySessions(sessions),
+    elevationGainM: hero.totalElevationGainM,
+    avgRpe: computeAvgRpe(sessions, allActivities)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Route ribbons — three fidelity tiers depending on what's synced for a run.
 // See supabase/functions/fetch-week-streams for how 'stream' data is obtained.
 // ---------------------------------------------------------------------------
@@ -752,7 +935,17 @@ function computeDataQuality(
 // ---------------------------------------------------------------------------
 
 export function buildWeeklyReport(input: BuildWeeklyReportInput): WeeklyReport | null {
-  const { planId, weekIndex, allSessions, allActivities, profile, personalRecords, narrativeInsight, trendWeeks = 4 } = input
+  const {
+    planId,
+    weekIndex,
+    allSessions,
+    allActivities,
+    profile,
+    personalRecords,
+    raceEvent = null,
+    narrativeInsight,
+    trendWeeks = 4
+  } = input
 
   const weeks = groupSessionsByWeek(allSessions)
   const week = weeks.find((w) => w.week === weekIndex)
@@ -767,6 +960,7 @@ export function buildWeeklyReport(input: BuildWeeklyReportInput): WeeklyReport |
   })
 
   const hero = computeHeroStats(sessions, allActivities)
+  const keyStats = computeKeyStats(weekIndex, weeks, week, hero, allActivities, profile, raceEvent)
   const splits = computeSplitsSummary(sessions, allActivities)
   const hrZoneBreakdown = computeHrZoneBreakdown(sessions, allActivities, zones)
   const cadence = computeCadenceSummary(sessions, allActivities)
@@ -785,6 +979,7 @@ export function buildWeeklyReport(input: BuildWeeklyReportInput): WeeklyReport |
     startDate: week.startDate,
     endDate: week.endDate,
     isCompleted: true,
+    keyStats,
     hero,
     splits,
     hrZones: hrZoneBreakdown,

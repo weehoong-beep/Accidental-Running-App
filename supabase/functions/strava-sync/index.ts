@@ -318,6 +318,7 @@ Deno.serve(async (req: Request) => {
             average_cadence: act.average_cadence != null ? act.average_cadence * 2 : null,
             average_temp: act.average_temp ?? null,
             suffer_score: act.suffer_score ?? null,
+            perceived_exertion: act.perceived_exertion ?? null,
             gear_id: act.gear_id ?? null,
             raw: act
           },
